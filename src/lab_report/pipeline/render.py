@@ -8,6 +8,7 @@ from pathlib import Path
 
 from docx import Document
 from docx.enum.text import WD_COLOR_INDEX
+from docx.shared import Cm
 
 from lab_report.pipeline.docx_utils import (
     TOKEN,
@@ -17,6 +18,7 @@ from lab_report.pipeline.docx_utils import (
     replace_text,
     row_paragraphs,
 )
+from lab_report.pipeline.images import IMAGE_PREFIX
 from lab_report.pipeline.index import Index
 from lab_report.pipeline.models import RowGroup, SlotResult
 
@@ -107,6 +109,7 @@ def render(
     results: dict[str, SlotResult],
     groups: dict[str, RowGroup],
     index: Index,
+    image_widths: dict[str, float] | None = None,
 ) -> dict:
     doc = Document(str(template))
     _expand_row_groups(doc, groups)
@@ -115,10 +118,14 @@ def render(
     for p in iter_paragraphs(doc):
         while (m := TOKEN.search(p.text)) is not None:
             result = _lookup(m.group(1), results, groups)
-            shown = result.value if result.value is not None else f"[{result.status}]"
+            is_image = result.slot.startswith(IMAGE_PREFIX) and result.value is not None
+            shown = "" if is_image else (result.value or f"[{result.status}]")
             run = replace_text(p, m.group(0), shown)
             if run is None:  # token text split oddly; leave it visible for the reviewer
                 break
+            if is_image:
+                width = (image_widths or {}).get(result.slot, 15)
+                run.add_picture(str(result.value), width=Cm(width))
             run.font.highlight_color = HIGHLIGHT[result.status]
             filled.append(result.slot)
             row_match = ROW_SLOT.match(result.slot)

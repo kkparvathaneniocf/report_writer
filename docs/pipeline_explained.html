@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Report Robot</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Fredoka:wght@500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: a lab-notebook page on graph paper; one vertical assembly line of stations,
+   each with a kid-sized comparison and a plain "what really happens" line. */
+:root {
+  --paper: #edf1f4;
+  --grid: rgba(42, 92, 130, 0.07);
+  --card: #ffffff;
+  --ink: #1b2530;
+  --muted: #566573;
+  --line: #ccd6de;
+  --accent: #23628c;
+  --accent-soft: #dceaf4;
+  --tag-bg: #fff6cf;
+  --tag-ink: #4a3b00;
+  /* Word highlight colours used in the generated report (same in both themes) */
+  --hl-none: #ffffff;
+  --hl-turq: #7fe3d6;
+  --hl-pink: #ffb2d0;
+  --hl-red: #ff7a7a;
+  --hl-yellow: #fff06a;
+  --hl-ink: #10161c;
+  --display: "Fredoka", "Trebuchet MS", system-ui, sans-serif;
+  --body: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #11171d; --grid: rgba(127, 184, 219, 0.06); --card: #19212a; --ink: #e2e9ef;
+    --muted: #9eabb7; --line: #2d3945; --accent: #82bde2; --accent-soft: #1d3446;
+    --tag-bg: #3a3313; --tag-ink: #fbe7a1; --hl-none: #19212a; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #11171d; --grid: rgba(127, 184, 219, 0.06); --card: #19212a; --ink: #e2e9ef;
+  --muted: #9eabb7; --line: #2d3945; --accent: #82bde2; --accent-soft: #1d3446;
+  --tag-bg: #3a3313; --tag-ink: #fbe7a1; --hl-none: #19212a; color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background-color: var(--paper);
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 24px 24px;
+  color: var(--ink);
+  font: 17px/1.6 var(--body);
+}
+.wrap { max-width: 980px; margin: 0 auto; padding-inline: 20px; padding-block: 40px 64px; display: grid; gap: 56px; }
+h1, h2, h3 { font-family: var(--display); font-weight: 600; line-height: 1.15; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(2.3rem, 6vw, 3.6rem); letter-spacing: -0.01em; }
+h2 { font-size: clamp(1.5rem, 3.4vw, 2rem); }
+h3 { font-size: 1.3rem; }
+p { margin: 0; max-width: 66ch; }
+code, .mono { font-family: var(--mono); font-size: 0.86em; }
+.eyebrow { font: 600 0.78rem/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+.muted { color: var(--muted); }
+section { display: grid; gap: 20px; }
+
+/* Hero */
+header { display: grid; gap: 18px; }
+.lead { font-size: 1.2rem; }
+.rule {
+  display: grid; grid-template-columns: auto 1fr; gap: 16px; align-items: center;
+  background: var(--card); border: 2px solid var(--accent); border-radius: 14px; padding: 18px 20px; max-width: 760px;
+}
+.rule strong { font-family: var(--display); font-weight: 500; font-size: 1.15rem; }
+
+/* Name tag sticker */
+.tag {
+  display: inline-block; font: 600 0.82rem/1.3 var(--mono); background: var(--tag-bg); color: var(--tag-ink);
+  padding: 2px 8px; border-radius: 6px; border: 1px dashed currentColor; white-space: nowrap;
+}
+
+/* Overview strip */
+.strip { display: flex; flex-wrap: wrap; gap: 8px 6px; align-items: center; }
+.strip a {
+  color: var(--ink); text-decoration: none; background: var(--card); border: 1px solid var(--line);
+  border-radius: 999px; padding: 6px 14px; font-weight: 700; font-size: 0.95rem;
+}
+.strip a:hover, .strip a:focus-visible { border-color: var(--accent); outline: none; color: var(--accent); }
+.strip .arrow { color: var(--muted); font-family: var(--mono); }
+
+/* Stations */
+.line { display: grid; gap: 0; position: relative; }
+.station { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 18px; padding-bottom: 34px; position: relative; }
+.station::before {
+  content: ""; position: absolute; left: 31px; top: 60px; bottom: 0; width: 2px; background: var(--line);
+}
+.station:last-child::before { display: none; }
+.disc {
+  width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--accent); color: var(--card); font: 600 1.6rem/1 var(--display);
+}
+.body { display: grid; gap: 10px; min-width: 0; padding-top: 10px; }
+.like {
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px;
+  display: grid; gap: 6px;
+}
+.like .k { font: 600 0.72rem/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.real { font-size: 0.95rem; color: var(--muted); }
+.real b { color: var(--ink); }
+.files { display: flex; flex-wrap: wrap; gap: 6px; }
+.files code { background: var(--accent-soft); color: var(--ink); padding: 2px 8px; border-radius: 6px; }
+
+/* Tag anatomy */
+.anatomy { overflow-x: auto; }
+.anatomy table { border-collapse: separate; border-spacing: 6px 0; font-family: var(--mono); }
+.anatomy td { text-align: center; padding: 6px 10px; }
+.anatomy .part { background: var(--tag-bg); color: var(--tag-ink); font-weight: 600; font-size: 1.05rem; border-radius: 6px; }
+.anatomy .sep { color: var(--muted); padding: 6px 0; }
+.anatomy .cap { font-family: var(--body); font-size: 0.82rem; color: var(--muted); padding-top: 6px; vertical-align: top; }
+
+/* Helpers grid */
+.helpers { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+.helper { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: grid; gap: 8px; align-content: start; }
+.helper h4 { margin: 0; font: 600 1.08rem/1.2 var(--display); }
+.helper p { font-size: 0.93rem; }
+.badge { justify-self: start; font: 600 0.72rem/1 var(--mono); letter-spacing: 0.05em; padding: 5px 8px; border-radius: 6px; color: var(--hl-ink); border: 1px solid rgba(0,0,0,0.15); }
+.b-none { background: var(--hl-none); color: var(--ink); border-color: var(--line); }
+.b-turq { background: var(--hl-turq); }
+.b-pink { background: var(--hl-pink); }
+.b-red { background: var(--hl-red); }
+.b-yellow { background: var(--hl-yellow); }
+
+/* Trails */
+.trails { display: grid; gap: 14px; }
+.trail { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px; display: grid; gap: 12px; }
+.trail h3 { font-size: 1.15rem; }
+.hops { display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; }
+.hop { flex: 1 1 170px; min-width: 0; border-left: 3px solid var(--accent); padding: 4px 10px; display: grid; gap: 4px; align-content: start; }
+.hop .k { font: 600 0.7rem/1.2 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.hop .v { font-size: 0.95rem; overflow-wrap: anywhere; }
+
+/* Legend */
+.legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; }
+.legend div { display: grid; grid-template-columns: 118px minmax(0, 1fr); gap: 12px; align-items: center; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.legend .badge { justify-self: stretch; text-align: center; padding: 8px 6px; }
+.legend p { font-size: 0.93rem; }
+
+/* Run numbers */
+.counts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.count { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: grid; gap: 4px; }
+.count .n { font: 600 2rem/1 var(--display); font-variant-numeric: tabular-nums; }
+.count .t { font-size: 0.9rem; color: var(--muted); }
+
+pre {
+  margin: 0; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px;
+  overflow-x: auto; font: 0.88rem/1.6 var(--mono);
+}
+.notyet { display: grid; gap: 8px; padding-left: 1.2em; margin: 0; }
+footer { color: var(--muted); font-size: 0.9rem; }
+@media (max-width: 520px) {
+  body { font-size: 16px; }
+  .station { grid-template-columns: 44px minmax(0, 1fr); gap: 12px; }
+  .disc { width: 44px; height: 44px; font-size: 1.2rem; }
+  .station::before { left: 21px; top: 44px; }
+  .legend div { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .strip a { transition: border-color .15s, color .15s; }
+}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+<header>
+  <span class="eyebrow">Lab report pipeline · POC · TR26_C0143</span>
+  <h1>The Report Robot</h1>
+  <p class="lead">How a pile of lab PDFs becomes a finished DNV test report, and how we can always point to the exact spot every word, number and picture came from.</p>
+  <div class="rule">
+    <span class="tag">ea87bba6:p1:t2r1c1</span>
+    <p><strong>The one big rule:</strong> every piece the robot puts in the report wears a name tag that says which paper, which page and which spot it came from. No tag, no trust.</p>
+  </div>
+</header>
+
+<section aria-labelledby="glance">
+  <h2 id="glance">The whole trip at a glance</h2>
+  <nav class="strip" aria-label="Pipeline steps">
+    <a href="#s1">Box of papers</a><span class="arrow">→</span>
+    <a href="#s2">Sort</a><span class="arrow">→</span>
+    <a href="#s3">Name tags</a><span class="arrow">→</span>
+    <a href="#s4">Treasure map</a><span class="arrow">→</span>
+    <a href="#s5">Four helpers</a><span class="arrow">→</span>
+    <a href="#s6">Checker</a><span class="arrow">→</span>
+    <a href="#s7">Glue into Word</a><span class="arrow">→</span>
+    <a href="#s8">Receipts</a><span class="arrow">→</span>
+    <a href="#s9">Grown-up signs</a>
+  </nav>
+</section>
+
+<section aria-labelledby="steps">
+  <h2 id="steps">Step by step</h2>
+  <div class="line">
+
+    <article class="station" id="s1">
+      <div class="disc">1</div>
+      <div class="body">
+        <h3>A box of papers arrives</h3>
+        <div class="like"><span class="k">Think of it like</span>
+          <p>Someone hands the robot a box with six papers in it. Each paper knows one part of the story, but none of them knows all of it.</p></div>
+        <p class="real"><b>What really happens:</b> the TR folder holds six PDFs: the test request, the fiber content file, the tensile machine report, the fabric certificate (COA), the infusion report and the specimen pictures.</p>
+        <div class="files"><code>data/raw/TR26_C0143/*.pdf</code></div>
+      </div>
+    </article>
+
+    <article class="station" id="s2">
+      <div class="disc">2</div>
+      <div class="body">
+        <h3>Sort the papers into drawers</h3>
+        <div class="like"><span class="k">Think of it like</span>
+          <p>Sorting socks: the robot reads the label on each paper and drops it in the right drawer. It also takes each paper's fingerprint. If even one dot on the paper changes later, the fingerprint changes too, so nobody can swap a paper secretly.</p></div>
+        <p class="real"><b>What really happens:</b> each PDF gets a document type from its file name or first-page words (TR_REQUEST, FWF, MACHINE_TENSILE, COA, INFUSION, PICTURES) and a SHA-256 fingerprint.</p>
+        <div class="files"><code>pipeline/index.py</code><code>config/report_spec.yaml → documents</code></div>
+      </div>
+    </article>
+
+    <article class="station" id="s3">
+      <div class="disc">3</div>
+      <div class="body">
+        <h3>Put a name tag on every little piece</h3>
+        <div class="like"><span class="k">Think of it like</span>
+          <p>Cutting each paper into tiny Lego bricks and putting a sticker on every brick. The sticker says which paper, which page, and exactly where on the page the brick sat.</p></div>
+        <div class="anatomy" role="figure" aria-label="Anatomy of a name tag">
+          <table>
+            <tr><td class="part">ea87bba6</td><td class="sep">:</td><td class="part">p1</td><td class="sep">:</td><td class="part">t2</td><td class="part">r1</td><td class="part">c1</td></tr>
+            <tr><td class="cap">paper fingerprint<br>(fiber content file)</td><td></td><td class="cap">page 1</td><td></td><td class="cap">table 2</td><td class="cap">row 1</td><td class="cap">column 1</td></tr>
+          </table>
+        </div>
+        <p class="real"><b>What really happens:</b> five kinds of bricks get tags: whole pages (<code>:p2</code>), text lines (<code>:l6</code>), table cells (<code>:t2r1c1</code>), photos (<code>:i1</code>) and drawn figures such as stress-strain curves (<code>:f1</code>). Each tag also stores the box around the brick on the page. Everything goes into a small database.</p>
+        <div class="files"><code>output/…/index.sqlite</code></div>
+      </div>
+    </article>
+
+    <article class="station" id="s4">
+      <div class="disc">4</div>
+      <div class="body">
+        <h3>Read the treasure map</h3>
+        <div class="like"><span class="k">Think of it like</span>
+          <p>A treasure map that says: "The fabric batch number is hidden in the COA paper, right after the words <em>Batch N°</em>." Every empty spot in the report has its own line on the map, so the robot always knows which drawer to open.</p></div>
+        <p class="real"><b>What really happens:</b> the report spec lists every blank in the DNV template and where its answer lives. This is retrieval, but aimed: the robot never rummages through all papers at once. That keeps answers exact and the AI's reading small.</p>
+        <div class="files"><code>config/report_spec.yaml</code><code>data/templet/dnv_poc_template.docx</code></div>
+      </div>
+    </article>
+
+    <article class="station" id="s5">
+      <div class="disc">5</div>
+      <div class="body">
+        <h3>Four helpers fetch the pieces</h3>
+        <div class="helpers">
+          <div class="helper">
+            <h4>The Copier</h4>
+            <p>Copies words and numbers exactly as written, like "24B1187" or a whole results table. Never changes a letter.</p>
+            <span class="badge b-none">VERIFIED</span>
+          </div>
+          <div class="helper">
+            <h4>The Calculator</h4>
+            <p>Works out the average, spread (SD), CV, highest and lowest. It keeps a list of every number it used, like showing its homework.</p>
+            <span class="badge b-none">COMPUTED</span>
+          </div>
+          <div class="helper">
+            <h4>The Photographer</h4>
+            <p>Takes snapshots of whole pages (COA, infusion report) and cuts out photos and curves by reading their captions. Each picture gets its own fingerprint.</p>
+            <span class="badge b-none">VERIFIED</span>
+          </div>
+          <div class="helper">
+            <h4>The Storyteller (Gemma)</h4>
+            <p>Writes short sentences, like the product description. It only reads one drawer and must point at the tags it used. Storytellers can make things up, so a grown-up always checks.</p>
+            <span class="badge b-turq">NEEDS_REVIEW</span>
+          </div>
+        </div>
+        <p class="real"><b>What really happens:</b> label lookups and table reading are plain code; statistics are plain code; Gemma 4 runs locally through Ollama with thinking switched off and must cite tag IDs. Numbers in results tables never come from the AI.</p>
+        <div class="files"><code>pipeline/extract.py</code><code>pipeline/images.py</code><code>pipeline/llm.py</code></div>
+      </div>
+    </article>
+
+    <article class="station" id="s6">
+      <div class="disc">6</div>
+      <div class="body">
+        <h3>The checker looks twice</h3>
+        <div class="like"><span class="k">Think of it like</span>
+          <p>A friend who checks your homework: "You said the answer is on this brick. Let me look. Yes, it's really there." If two papers give different answers, the checker raises a hand. If nobody can find the answer, it says so out loud instead of guessing.</p></div>
+        <p class="real"><b>What really happens:</b> every copied value must appear in the text of the tag it cites. If the AI cites a tag that doesn't exist, it is flagged. Cross-checks compare sources: the COA says batch <b>24B1187</b>, the infusion report says <b>24B1178</b>, so the value is marked CONFLICT.</p>
+      </div>
+    </article>
+
+    <article class="station" id="s7">
+      <div class="disc">7</div>
+      <div class="body">
+        <h3>Glue everything into the Word report</h3>
+        <div class="like"><span class="k">Think of it like</span>
+          <p>Filling in a sticker book. Each blank gets its piece, and next to it the robot sticks a little note: "I came from the COA, page 1, line 6." Anything that needs a grown-up's eye gets a bright color.</p></div>
+        <p class="real"><b>What really happens:</b> blanks such as <code>{{fabric_batch}}</code> in the DNV template are replaced while keeping Word formatting. Table rows are copied once per specimen, pictures go into the appendices, and every value gets a Word comment with its source and tag.</p>
+        <div class="files"><code>pipeline/render.py</code><code>output/…/report.docx</code></div>
+      </div>
+    </article>
+
+    <article class="station" id="s8">
+      <div class="disc">8</div>
+      <div class="body">
+        <h3>Keep all the receipts</h3>
+        <div class="like"><span class="k">Think of it like</span>
+          <p>Keeping the receipt for everything you bought. Later, anyone can ask "where did this come from?" and the robot shows the receipt, with a little photo of the exact spot on the paper.</p></div>
+        <p class="real"><b>What really happens:</b> a provenance file lists every value with its status, method, cited tags, inputs and AI model version. Cropped PNGs show each cited spot. The <code>trace</code> command answers the question for one value.</p>
+        <div class="files"><code>output/…/provenance.json</code><code>output/…/evidence/*.png</code><code>output/…/images/*.png</code></div>
+      </div>
+    </article>
+
+    <article class="station" id="s9">
+      <div class="disc">9</div>
+      <div class="body">
+        <h3>A grown-up checks and signs</h3>
+        <div class="like"><span class="k">Think of it like</span>
+          <p>The robot can build the whole sticker book, but it is never allowed to sign it. A person looks at every colored spot, fills in the yellow parts, and then signs.</p></div>
+        <p class="real"><b>What really happens:</b> the yellow fields (requester, test period, writer, validator, dates, distribution) stay manual. Turquoise, pink and red values are reviewed before release. Nothing is signed automatically.</p>
+      </div>
+    </article>
+
+  </div>
+</section>
+
+<section aria-labelledby="follow">
+  <h2 id="follow">Follow one piece all the way</h2>
+  <p class="muted">Three real values from the POC run, from the PDF to the Word report.</p>
+  <div class="trails">
+    <div class="trail">
+      <h3>The average fiber weight: 70,18 %</h3>
+      <div class="hops">
+        <div class="hop"><span class="k">Paper</span><span class="v">Fiber content file, page 1, results table</span></div>
+        <div class="hop"><span class="k">Bricks</span><span class="v">5 cells: 69,64 · 70,42 · 70,41 · 69,80 · 70,63<br><span class="tag">ea87bba6:p1:t2r1c1</span> …</span></div>
+        <div class="hop"><span class="k">Helper</span><span class="v">Calculator: mean of n = 5</span></div>
+        <div class="hop"><span class="k">In Word</span><span class="v">Results summary, Wf average <b>70,18</b> <span class="badge b-none">COMPUTED</span></span></div>
+      </div>
+    </div>
+    <div class="trail">
+      <h3>The fabric batch: two papers disagree</h3>
+      <div class="hops">
+        <div class="hop"><span class="k">Paper 1</span><span class="v">COA: "Batch N°: 24B1187"<br><span class="tag">1f55ac75:p1:l6</span></span></div>
+        <div class="hop"><span class="k">Paper 2</span><span class="v">Infusion report: "Fabric batch: 24B1178"<br><span class="tag">be3732c2:p1:l3</span></span></div>
+        <div class="hop"><span class="k">Checker</span><span class="v">Two different answers, so it raises a hand</span></div>
+        <div class="hop"><span class="k">In Word</span><span class="v">Reinforcement table shows <b>24B1187</b> <span class="badge b-pink">CONFLICT</span>, and the note cites both papers</span></div>
+      </div>
+    </div>
+    <div class="trail">
+      <h3>The stress-strain curves picture</h3>
+      <div class="hops">
+        <div class="hop"><span class="k">Paper</span><span class="v">Tensile machine report, page 2 (curves drawn as lines, not a photo)</span></div>
+        <div class="hop"><span class="k">Brick</span><span class="v">Drawn figure found by its caption "Stress-strain curves"<br><span class="tag">2669ff6a:p2:f1</span></span></div>
+        <div class="hop"><span class="k">Helper</span><span class="v">Photographer cuts it out, with axis labels, and fingerprints the picture</span></div>
+        <div class="hop"><span class="k">In Word</span><span class="v">Appendix 3, test report <span class="badge b-none">VERIFIED</span></span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section aria-labelledby="colors">
+  <h2 id="colors">What the colors in the Word report mean</h2>
+  <div class="legend">
+    <div><span class="badge b-none">no color</span><p>Copied exactly or calculated, and checked. Safe, but still readable in the note.</p></div>
+    <div><span class="badge b-turq">turquoise</span><p>Written by the AI storyteller. Read it and compare with the cited source.</p></div>
+    <div><span class="badge b-pink">pink</span><p>Two papers disagree. Decide which one is right.</p></div>
+    <div><span class="badge b-red">red</span><p>Missing, or not built yet. Find it or fill it in by hand.</p></div>
+    <div><span class="badge b-yellow">yellow</span><p>Always typed by a person (from the template). The robot never touches it.</p></div>
+  </div>
+</section>
+
+<section aria-labelledby="run">
+  <h2 id="run">The last POC run, in numbers</h2>
+  <div class="counts">
+    <div class="count"><span class="n">121</span><span class="t">copied and checked, including 6 pictures</span></div>
+    <div class="count"><span class="n">48</span><span class="t">calculated (averages, SD, CV, min, max)</span></div>
+    <div class="count"><span class="n">1</span><span class="t">conflict between two papers (planted on purpose)</span></div>
+    <div class="count"><span class="n">4</span><span class="t">missing: 1 planted, 3 because the AI was switched off</span></div>
+    <div class="count"><span class="n">8</span><span class="t">not built yet: characteristic values (Rk)</span></div>
+  </div>
+</section>
+
+<section aria-labelledby="try">
+  <h2 id="try">Try it yourself</h2>
+  <pre><code>python run_poc.py                        # build the report without the AI
+python run_poc.py --llm --model gemma4:26b  # with Gemma via Ollama
+lab-report trace fabric_batch            # where did this value come from?</code></pre>
+  <p class="muted">Results land in <code>output/TR26_C0143/</code>: report.docx, provenance.json, index.sqlite, evidence/ and images/.</p>
+</section>
+
+<section aria-labelledby="next">
+  <h2 id="next">What the robot can't do yet</h2>
+  <ul class="notyet">
+    <li>Calculate characteristic values (Rk) per DNVGL-ST-0376 and GL2010.</li>
+    <li>Read scanned papers. That needs OCR or Gemma's picture reading.</li>
+    <li>Read real machine reports. Each machine's layout needs its own reader, built from real sample PDFs.</li>
+  </ul>
+</section>
+
+<footer>Dummy data only. Numbers and tags come from the generated TR26_C0143 example and change when the example PDFs are regenerated.</footer>
+
+</div>
+</body>
+</html>

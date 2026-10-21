@@ -16,7 +16,7 @@ import pymupdf
 
 from lab_report.pipeline.models import Block
 
-PARSER_VERSION = f"pymupdf-{pymupdf.__version__}/lines+cells-v1"
+PARSER_VERSION = f"pymupdf-{pymupdf.__version__}/pages+lines+cells+visuals-v2"
 # Default flags minus ligature preservation, so "fi" is not returned as U+FB01.
 TEXT_FLAGS = pymupdf.TEXT_PRESERVE_WHITESPACE | pymupdf.TEXT_MEDIABOX_CLIP
 
@@ -55,6 +55,20 @@ def parse_pdf(path: Path, digest: str, doc_type: str) -> list[Block]:
     short = digest[:8]
     with pymupdf.open(path) as pdf:
         for page_no, page in enumerate(pdf, 1):
+            first_line = page.get_text(flags=TEXT_FLAGS).strip().split("\n")[0][:120]
+            blocks.append(
+                Block(
+                    id=f"{short}:p{page_no}",
+                    doc_sha256=digest,
+                    file=path.name,
+                    doc_type=doc_type,
+                    page=page_no,
+                    kind="page",
+                    bbox=tuple(round(v, 1) for v in page.rect),
+                    text=f"page {page_no}/{pdf.page_count}: {first_line}",
+                )
+            )
+            page_start = len(blocks)
             line_no = 0
             for b in page.get_text("dict", flags=TEXT_FLAGS)["blocks"]:
                 for line in b.get("lines", []):
@@ -75,7 +89,8 @@ def parse_pdf(path: Path, digest: str, doc_type: str) -> list[Block]:
                         )
                     )
             words = page.get_text("words", flags=TEXT_FLAGS)
-            for t_no, table in enumerate(page.find_tables(), 1):
+            tables = page.find_tables().tables
+            for t_no, table in enumerate(tables, 1):
                 for r_no, row in enumerate(table.rows):
                     for c_no, bbox in enumerate(row.cells):
                         if bbox is None:  # merged cell
@@ -95,7 +110,80 @@ def parse_pdf(path: Path, digest: str, doc_type: str) -> list[Block]:
                                 col=c_no,
                             )
                         )
+            lines = [b for b in blocks[page_start:] if b.kind == "line"]
+            visuals = _images(page) + _figures(page, [pymupdf.Rect(t.bbox) for t in tables])
+            for n, (kind, rect, xref) in enumerate(visuals, 1):
+                caption_lines = lines
+                if kind == "figure":
+                    rect, absorbed = _absorb_labels(rect, lines)
+                    caption_lines = [b for b in lines if b.id not in absorbed]
+                blocks.append(
+                    Block(
+                        id=f"{short}:p{page_no}:{kind[0]}{n}",
+                        doc_sha256=digest,
+                        file=path.name,
+                        doc_type=doc_type,
+                        page=page_no,
+                        kind=kind,
+                        bbox=tuple(round(v, 1) for v in rect),
+                        text=_caption(rect, caption_lines),
+                        xref=xref,
+                    )
+                )
     return blocks
+
+
+def _images(page: pymupdf.Page) -> list[tuple[str, pymupdf.Rect, int | None]]:
+    """Embedded raster images (photos, screenshots) with their position on the page."""
+    out: list[tuple[str, pymupdf.Rect, int | None]] = []
+    for info in page.get_images(full=True):
+        for rect in page.get_image_rects(info[0]):
+            if rect.width > 40 and rect.height > 40:  # skip icons and logos
+                out.append(("image", rect, info[0]))
+    return out
+
+
+def _figures(page: pymupdf.Page, tables: list[pymupdf.Rect]) -> list[tuple]:
+    """Vector graphics regions (plotted curves, diagrams) that are not table rulings.
+
+    Machine software usually draws stress/strain curves as vector paths, so image
+    extraction alone would miss them.
+    """
+    out = []
+    for rect in page.cluster_drawings():
+        if rect.width < 120 or rect.height < 80:
+            continue
+        if any(abs(rect & t) > 0.5 * abs(rect) for t in tables):
+            continue
+        out.append(("figure", rect, None))
+    return out
+
+
+def _absorb_labels(rect: pymupdf.Rect, lines: list[Block]) -> tuple[pymupdf.Rect, set[str]]:
+    """Grow a vector figure's box over its axis labels (short text lines touching it)."""
+    zone = rect + (-40, -15, 15, 30)
+    grown, absorbed = pymupdf.Rect(rect), set()
+    for b in lines:
+        r = pymupdf.Rect(b.bbox)
+        if zone.intersects(r) and len(b.text) <= 20:
+            grown |= r
+            absorbed.add(b.id)
+    return grown, absorbed
+
+
+def _caption(rect: pymupdf.Rect, lines: list[Block], gap: float = 30) -> str:
+    """Nearest text line just below (preferred) or above a visual, overlapping horizontally."""
+
+    def overlaps(b: Block) -> bool:
+        return b.bbox[0] < rect.x1 and b.bbox[2] > rect.x0
+
+    below = [b for b in lines if overlaps(b) and 0 <= b.bbox[1] - rect.y1 <= gap]
+    above = [b for b in lines if overlaps(b) and 0 <= rect.y0 - b.bbox[3] <= gap]
+    if below:
+        return min(below, key=lambda b: b.bbox[1]).text
+    if above:
+        return max(above, key=lambda b: b.bbox[3]).text
+    return ""
 
 
 class Index:
@@ -127,7 +215,7 @@ class Index:
                     doc_type TEXT, classified_by TEXT, pages INTEGER);
                 CREATE TABLE blocks(id TEXT PRIMARY KEY, doc_sha256 TEXT REFERENCES documents,
                     page INTEGER, kind TEXT, tbl INTEGER, row INTEGER, col INTEGER,
-                    x0 REAL, y0 REAL, x1 REAL, y1 REAL, text TEXT);
+                    x0 REAL, y0 REAL, x1 REAL, y1 REAL, text TEXT, xref INTEGER);
                 """
             )
             con.execute("INSERT INTO meta VALUES ('parser_version', ?)", (PARSER_VERSION,))
@@ -137,9 +225,20 @@ class Index:
                 self.documents,
             )
             con.executemany(
-                "INSERT INTO blocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO blocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 [
-                    (b.id, b.doc_sha256, b.page, b.kind, b.table, b.row, b.col, *b.bbox, b.text)
+                    (
+                        b.id,
+                        b.doc_sha256,
+                        b.page,
+                        b.kind,
+                        b.table,
+                        b.row,
+                        b.col,
+                        *b.bbox,
+                        b.text,
+                        b.xref,
+                    )
                     for b in self.blocks
                 ],
             )

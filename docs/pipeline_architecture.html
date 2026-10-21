@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lab Report Pipeline Architecture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+/* Layout: an engineering design note. Single reading column for prose, full-width figures
+   in their own scroll containers; teal marks structure, amber marks the one AI step. */
+:root {
+  --bg: #f2f4f5;
+  --surface: #ffffff;
+  --ink: #17212a;
+  --muted: #5a6671;
+  --rule: #d2dae0;
+  --accent: #0e6a87;
+  --accent-wash: #e1eef3;
+  --ai: #a35f00;
+  --ai-wash: #fbefdc;
+  --hl-turq: #7fe3d6;
+  --hl-pink: #ffb2d0;
+  --hl-red: #ff7a7a;
+  --hl-yellow: #fff06a;
+  --hl-ink: #10161c;
+  --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1418; --surface: #172027; --ink: #e0e7ed; --muted: #97a5b1; --rule: #2a3640;
+    --accent: #69c0da; --accent-wash: #14303a; --ai: #f0b25a; --ai-wash: #3a2a12; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1418; --surface: #172027; --ink: #e0e7ed; --muted: #97a5b1; --rule: #2a3640;
+  --accent: #69c0da; --accent-wash: #14303a; --ai: #f0b25a; --ai-wash: #3a2a12; color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 16px/1.62 var(--body); }
+.page { max-width: 1060px; margin: 0 auto; padding-inline: 20px; padding-block: 44px 72px; display: grid; gap: 64px; }
+h1, h2, h3 { font-family: var(--display); font-weight: 600; line-height: 1.15; margin: 0; text-wrap: balance; }
+h1 { font-size: clamp(2.1rem, 5vw, 3.1rem); }
+h2 { font-size: clamp(1.45rem, 3vw, 1.85rem); }
+h3 { font-size: 1.15rem; }
+p { margin: 0; max-width: 68ch; }
+code { font-family: var(--mono); font-size: 0.86em; background: var(--accent-wash); padding: 1px 5px; border-radius: 4px; }
+.eyebrow { font: 500 0.76rem/1 var(--mono); letter-spacing: 0.09em; text-transform: uppercase; color: var(--accent); }
+.muted { color: var(--muted); }
+section { display: grid; gap: 18px; }
+.sec-head { display: grid; gap: 8px; }
+.num { font: 500 0.8rem/1 var(--mono); color: var(--muted); }
+
+header { display: grid; gap: 18px; }
+.lead { font-size: 1.15rem; max-width: 62ch; }
+.props { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
+.props div { padding: 14px 16px 14px 0; display: grid; gap: 4px; }
+.props b { font-family: var(--display); font-weight: 600; font-size: 1.02rem; }
+.props span { font-size: 0.92rem; color: var(--muted); }
+
+/* Figures */
+figure { margin: 0; display: grid; gap: 10px; }
+.scroll { overflow-x: auto; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 16px; }
+.scroll svg { display: block; width: 100%; min-width: 760px; height: auto; color: var(--ink); }
+figcaption { font-size: 0.92rem; color: var(--muted); max-width: 80ch; }
+svg text { font-family: var(--body); font-size: 13px; fill: currentColor; }
+svg .sm { font-size: 11px; fill: var(--muted); }
+svg .mono { font-family: var(--mono); font-size: 11px; }
+svg .lbl { font-family: var(--mono); font-size: 10.5px; fill: var(--muted); }
+svg .box { fill: var(--surface); stroke: currentColor; stroke-width: 1.3; }
+svg .store { fill: var(--accent-wash); stroke: var(--accent); stroke-width: 1.3; }
+svg .cfg { fill: var(--bg); stroke: var(--muted); stroke-width: 1.2; stroke-dasharray: 4 3; }
+svg .ai { fill: var(--ai-wash); stroke: var(--ai); stroke-width: 1.6; }
+svg .ai-t { fill: var(--ai); }
+svg .ln { stroke: currentColor; stroke-width: 1.3; fill: none; }
+svg .ln-ai { stroke: var(--ai); stroke-width: 1.4; fill: none; }
+svg .ln-acc { stroke: var(--accent); stroke-width: 1.4; fill: none; }
+svg .dash { stroke-dasharray: 5 4; }
+svg .bad { fill: var(--surface); stroke: var(--hl-red); stroke-width: 1.6; }
+svg .good { fill: var(--surface); stroke: var(--accent); stroke-width: 1.8; }
+svg .head { fill: currentColor; }
+svg .head-ai { fill: var(--ai); }
+svg .head-acc { fill: var(--accent); }
+svg .zone { fill: none; stroke: var(--rule); stroke-width: 1; }
+
+/* Tables */
+.tbl { overflow-x: auto; border: 1px solid var(--rule); border-radius: 8px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 0.93rem; }
+th, td { text-align: left; vertical-align: top; padding: 10px 14px; border-bottom: 1px solid var(--rule); }
+tr:last-child td { border-bottom: 0; }
+th { font: 600 0.78rem/1.3 var(--mono); letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); background: var(--bg); }
+td code { white-space: nowrap; }
+.st { display: inline-block; font: 500 0.74rem/1 var(--mono); padding: 5px 7px; border-radius: 4px; color: var(--hl-ink); white-space: nowrap; border: 1px solid rgba(0,0,0,.12); }
+.st-ok { background: var(--surface); color: var(--ink); border-color: var(--rule); }
+.st-turq { background: var(--hl-turq); }
+.st-pink { background: var(--hl-pink); }
+.st-red { background: var(--hl-red); }
+
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; }
+.two > * { min-width: 0; }
+pre { margin: 0; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 14px 16px; overflow-x: auto; font: 0.84rem/1.55 var(--mono); }
+pre code { background: none; padding: 0; font-size: inherit; }
+.recipes { display: grid; gap: 0; border-top: 1px solid var(--rule); }
+.recipe { display: grid; grid-template-columns: minmax(180px, 260px) minmax(0, 1fr); gap: 20px; padding: 16px 0; border-bottom: 1px solid var(--rule); }
+.recipe h3 { font-size: 1.05rem; }
+.recipe p { font-size: 0.95rem; }
+ul.limits { margin: 0; padding-left: 1.2em; display: grid; gap: 8px; max-width: 75ch; }
+footer { color: var(--muted); font-size: 0.88rem; border-top: 1px solid var(--rule); padding-top: 16px; }
+@media (max-width: 600px) {
+  .recipe { grid-template-columns: 1fr; gap: 6px; }
+}
+</style>
+</head>
+<body>
+
+<div class="page">
+
+<header>
+  <span class="eyebrow">Design note · report_writer · POC</span>
+  <h1>Lab Report Pipeline Architecture</h1>
+  <p class="lead">How PDFs from a TR folder become a filled DNV test report in Word, which parts are plain code, where Gemma is allowed to act, and how every value stays traceable to a spot in a source PDF.</p>
+  <div class="props">
+    <div><b>Runs on the workstation</b><span>Gemma 4 through Ollama on localhost. No document leaves the machine.</span></div>
+    <div><b>Numbers never come from the model</b><span>Tables and statistics are parsed and computed in code.</span></div>
+    <div><b>Every value cites a block</b><span>Page, line, cell, image or figure, with its bounding box.</span></div>
+    <div><b>A person signs</b><span>Manual fields stay manual; flagged values are reviewed first.</span></div>
+  </div>
+</header>
+
+<section aria-labelledby="sys">
+  <div class="sec-head"><span class="num">1</span><h2 id="sys">The system in one picture</h2></div>
+  <p>The pipeline is a fixed sequence, run by <code>run_pipeline()</code>. Configuration says what to fetch; code decides how. The model is one tool inside the extract step, not the orchestrator.</p>
+  <figure>
+    <div class="scroll">
+      <svg viewBox="0 0 1000 420" role="img" aria-label="Data flow: PDFs are registered and indexed into tagged blocks, extracted per the report spec, verified against cited block text, and rendered into the tokenized DNV template, producing report.docx, provenance.json and evidence images. Gemma via Ollama is called only from the extract step.">
+        <defs>
+          <marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head"/></marker>
+          <marker id="a1ai" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head-ai"/></marker>
+          <marker id="a1acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head-acc"/></marker>
+        </defs>
+
+        <!-- config row -->
+        <rect class="cfg" x="340" y="20" width="124" height="52" rx="6"/>
+        <text x="402" y="42" text-anchor="middle">report_spec.yaml</text>
+        <text x="402" y="60" text-anchor="middle" class="sm">slot → source + method</text>
+        <rect class="cfg" x="680" y="20" width="124" height="52" rx="6"/>
+        <text x="742" y="42" text-anchor="middle">DNV template</text>
+        <text x="742" y="60" text-anchor="middle" class="sm">{{slot}} tokens</text>
+        <line class="ln dash" x1="402" y1="72" x2="402" y2="146" marker-end="url(#a1)"/>
+        <line class="ln dash" x1="742" y1="72" x2="742" y2="146" marker-end="url(#a1)"/>
+
+        <!-- main flow -->
+        <rect class="box" x="10" y="150" width="124" height="64" rx="6"/>
+        <text x="72" y="177" text-anchor="middle">TR folder</text>
+        <text x="72" y="196" text-anchor="middle" class="sm">6 PDFs</text>
+
+        <rect class="box" x="180" y="150" width="124" height="64" rx="6"/>
+        <text x="242" y="177" text-anchor="middle">Register + index</text>
+        <text x="242" y="196" text-anchor="middle" class="sm">classify, hash, tag</text>
+
+        <rect class="box" x="350" y="150" width="104" height="64" rx="6"/>
+        <text x="402" y="177" text-anchor="middle">Extract</text>
+        <text x="402" y="196" text-anchor="middle" class="sm">5 methods</text>
+
+        <rect class="box" x="510" y="150" width="104" height="64" rx="6"/>
+        <text x="562" y="177" text-anchor="middle">Verify</text>
+        <text x="562" y="196" text-anchor="middle" class="sm">set status</text>
+
+        <rect class="box" x="690" y="150" width="104" height="64" rx="6"/>
+        <text x="742" y="177" text-anchor="middle">Render</text>
+        <text x="742" y="196" text-anchor="middle" class="sm">fill + comment</text>
+
+        <rect class="good" x="860" y="150" width="124" height="64" rx="6"/>
+        <text x="922" y="177" text-anchor="middle">report.docx</text>
+        <text x="922" y="196" text-anchor="middle" class="sm">for review</text>
+
+        <line class="ln" x1="134" y1="182" x2="178" y2="182" marker-end="url(#a1)"/>
+        <text x="156" y="174" text-anchor="middle" class="lbl">bytes</text>
+        <line class="ln" x1="304" y1="182" x2="348" y2="182" marker-end="url(#a1)"/>
+        <text x="326" y="174" text-anchor="middle" class="lbl">blocks</text>
+        <line class="ln" x1="454" y1="182" x2="508" y2="182" marker-end="url(#a1)"/>
+        <text x="481" y="174" text-anchor="middle" class="lbl">results</text>
+        <line class="ln" x1="614" y1="182" x2="688" y2="182" marker-end="url(#a1)"/>
+        <text x="651" y="174" text-anchor="middle" class="lbl">statuses</text>
+        <line class="ln" x1="794" y1="182" x2="858" y2="182" marker-end="url(#a1)"/>
+        <text x="826" y="174" text-anchor="middle" class="lbl">writes</text>
+
+        <!-- stores and the AI tool -->
+        <rect class="store" x="180" y="268" width="124" height="52" rx="6"/>
+        <text x="242" y="290" text-anchor="middle">index.sqlite</text>
+        <text x="242" y="308" text-anchor="middle" class="sm">documents + blocks</text>
+        <line class="ln-acc" x1="242" y1="214" x2="242" y2="266" marker-end="url(#a1acc)"/>
+        <text x="250" y="246" class="lbl">persists</text>
+
+        <rect class="ai" x="340" y="268" width="124" height="52" rx="6"/>
+        <text x="402" y="290" text-anchor="middle" class="ai-t">Gemma 4</text>
+        <text x="402" y="308" text-anchor="middle" class="sm">Ollama, localhost</text>
+        <line class="ln-ai" x1="390" y1="216" x2="390" y2="266" marker-end="url(#a1ai)"/>
+        <line class="ln-ai" x1="414" y1="266" x2="414" y2="216" marker-end="url(#a1ai)"/>
+        <text x="384" y="246" text-anchor="end" class="lbl">one doc type</text>
+        <text x="420" y="246" class="lbl">JSON + ids</text>
+
+        <path class="ln-acc dash" d="M242,320 L242,390 L562,390 L562,216" marker-end="url(#a1acc)"/>
+        <text x="402" y="384" text-anchor="middle" class="lbl">cited block text, for the literal check</text>
+
+        <rect class="store" x="690" y="268" width="124" height="52" rx="6"/>
+        <text x="752" y="290" text-anchor="middle">provenance.json</text>
+        <text x="752" y="308" text-anchor="middle" class="sm">one record per value</text>
+        <rect class="store" x="860" y="268" width="124" height="52" rx="6"/>
+        <text x="922" y="290" text-anchor="middle">evidence/, images/</text>
+        <text x="922" y="308" text-anchor="middle" class="sm">PNG crops, pictures</text>
+        <line class="ln-acc" x1="742" y1="214" x2="742" y2="266" marker-end="url(#a1acc)"/>
+        <path class="ln-acc" d="M770,214 L770,240 L922,240 L922,266" marker-end="url(#a1acc)"/>
+      </svg>
+    </div>
+    <figcaption>Solid arrows are the main data path. Dashed grey arrows are configuration read once per run. The amber pair is the only call that is not deterministic, and it carries only the blocks of one document type.</figcaption>
+  </figure>
+
+  <div class="tbl">
+    <table>
+      <thead><tr><th>Step</th><th>Module</th><th>In → out</th><th>What it decides</th></tr></thead>
+      <tbody>
+        <tr><td>Register</td><td><code>index.py</code></td><td>PDF → document row</td><td>Document type from file name, then first-page keywords. SHA-256 of the bytes.</td></tr>
+        <tr><td>Index</td><td><code>index.py</code></td><td>page → blocks</td><td>Pages, text lines, table cells (text rebuilt from words inside the cell box), embedded images, vector figures with their caption.</td></tr>
+        <tr><td>Extract</td><td><code>extract.py</code> <code>images.py</code> <code>llm.py</code></td><td>slot spec + blocks → <code>SlotResult</code></td><td>Label lookup, table by header, statistics, image by caption or page, Gemma for free-text fields.</td></tr>
+        <tr><td>Verify</td><td><code>extract.py</code></td><td><code>SlotResult</code> → status</td><td>Cited ids exist; copied value appears in cited text; sources agree.</td></tr>
+        <tr><td>Render</td><td><code>render.py</code> <code>docx_utils.py</code></td><td>template + results → DOCX</td><td>Replace tokens keeping run formatting, clone table rows, insert pictures, add one Word comment per value or row, highlight by status.</td></tr>
+        <tr><td>Record</td><td><code>run.py</code></td><td>everything → files</td><td>provenance.json, index.sqlite, evidence crops, unfilled-token list.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section aria-labelledby="rag">
+  <div class="sec-head"><span class="num">2</span><h2 id="rag">Aimed retrieval, not search over everything</h2></div>
+  <p>A report template is a fixed list of blanks, and the lab already knows which document answers each one. So the spec maps each blank to a document type, and retrieval is a filter, not a similarity search. The model sees one drawer, and its answer is checked against the exact blocks it names.</p>
+  <figure>
+    <div class="scroll">
+      <svg viewBox="0 0 1000 300" role="img" aria-label="Comparison: classic RAG embeds a question and searches chunks from every document, then passes top-k chunks to the model with optional citations. This pipeline looks up the slot in the spec, filters to one document type's tagged blocks, and verifies the cited block ids and text after the model answers.">
+        <defs>
+          <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head"/></marker>
+          <marker id="a2acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head-acc"/></marker>
+        </defs>
+        <text x="10" y="26" class="mono">CLASSIC RAG</text>
+        <rect class="box" x="10" y="40" width="130" height="56" rx="6"/><text x="75" y="73" text-anchor="middle">Question</text>
+        <rect class="box" x="190" y="40" width="150" height="56" rx="6"/><text x="265" y="64" text-anchor="middle">Vector search</text><text x="265" y="83" text-anchor="middle" class="sm">all chunks, all docs</text>
+        <rect class="box" x="390" y="40" width="140" height="56" rx="6"/><text x="460" y="64" text-anchor="middle">Top-k chunks</text><text x="460" y="83" text-anchor="middle" class="sm">similar, maybe wrong doc</text>
+        <rect class="box" x="580" y="40" width="120" height="56" rx="6"/><text x="640" y="73" text-anchor="middle">LLM</text>
+        <rect class="bad" x="750" y="40" width="230" height="56" rx="6"/><text x="865" y="64" text-anchor="middle">Answer</text><text x="865" y="83" text-anchor="middle" class="sm">citation optional, not checked</text>
+        <line class="ln" x1="140" y1="68" x2="188" y2="68" marker-end="url(#a2)"/>
+        <line class="ln" x1="340" y1="68" x2="388" y2="68" marker-end="url(#a2)"/>
+        <line class="ln" x1="530" y1="68" x2="578" y2="68" marker-end="url(#a2)"/>
+        <line class="ln" x1="700" y1="68" x2="748" y2="68" marker-end="url(#a2)"/>
+
+        <line class="zone" x1="10" y1="130" x2="990" y2="130"/>
+
+        <text x="10" y="166" class="mono">THIS PIPELINE</text>
+        <rect class="box" x="10" y="180" width="130" height="56" rx="6"/><text x="75" y="204" text-anchor="middle">Template slot</text><text x="75" y="223" text-anchor="middle" class="sm">fabric_batch</text>
+        <rect class="cfg" x="190" y="180" width="150" height="56" rx="6"/><text x="265" y="204" text-anchor="middle">Spec lookup</text><text x="265" y="223" text-anchor="middle" class="sm">source: COA</text>
+        <rect class="store" x="390" y="180" width="140" height="56" rx="6"/><text x="460" y="204" text-anchor="middle">COA blocks only</text><text x="460" y="223" text-anchor="middle" class="sm">each with a tag id</text>
+        <rect class="box" x="580" y="180" width="120" height="56" rx="6"/><text x="640" y="204" text-anchor="middle">Code or LLM</text><text x="640" y="223" text-anchor="middle" class="sm">must cite ids</text>
+        <rect class="good" x="750" y="180" width="230" height="56" rx="6"/><text x="865" y="204" text-anchor="middle">Value + block ids</text><text x="865" y="223" text-anchor="middle" class="sm">ids and text verified</text>
+        <line class="ln" x1="140" y1="208" x2="188" y2="208" marker-end="url(#a2)"/>
+        <line class="ln" x1="340" y1="208" x2="388" y2="208" marker-end="url(#a2)"/>
+        <line class="ln" x1="530" y1="208" x2="578" y2="208" marker-end="url(#a2)"/>
+        <line class="ln" x1="700" y1="208" x2="748" y2="208" marker-end="url(#a2)"/>
+        <path class="ln-acc dash" d="M865,236 L865,272 L460,272 L460,238" marker-end="url(#a2acc)"/>
+        <text x="662" y="266" text-anchor="middle" class="lbl">re-read cited blocks: does the value appear there?</text>
+      </svg>
+    </div>
+    <figcaption>The difference is two edges: the filter to one document type before the model, and the check back against the cited blocks after it. A vector index becomes useful only if a slot's source cannot be named in advance.</figcaption>
+  </figure>
+</section>
+
+<section aria-labelledby="agent">
+  <div class="sec-head"><span class="num">3</span><h2 id="agent">How the AI step works</h2></div>
+  <p>The workflow is an orchestrated pipeline with one bounded model call per free-text field, which keeps the run reproducible and auditable. The model does not choose tools, loop, or write numbers. It answers one question, in JSON, and must name the blocks it read.</p>
+  <figure>
+    <div class="scroll">
+      <svg viewBox="0 0 1000 520" role="img" aria-label="Flow of one LLM field: select blocks of the slot's document type, build a prompt capped at 24,000 characters, call Ollama with a JSON schema and thinking off; if the reply is empty retry in plain JSON mode; if still empty or unparsable, mark MISSING with diagnostics; otherwise drop citations outside the allowed set, note whether the value appears literally, and return NEEDS_REVIEW with the model digest and prompt hash.">
+        <defs>
+          <marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head"/></marker>
+          <marker id="a3ai" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head-ai"/></marker>
+        </defs>
+        <!-- main column -->
+        <rect class="box" x="40" y="20" width="400" height="54" rx="6"/>
+        <text x="60" y="43">Select blocks</text><text x="60" y="62" class="sm">text lines of spec.source only, e.g. TR_REQUEST</text>
+        <rect class="box" x="40" y="104" width="400" height="54" rx="6"/>
+        <text x="60" y="127">Build prompt</text><text x="60" y="146" class="sm">instruction + "[id] text" lines, capped at 24 000 chars</text>
+        <rect class="ai" x="40" y="188" width="400" height="66" rx="6"/>
+        <text x="60" y="211" class="ai-t">Ollama chat · gemma4:26b</text>
+        <text x="60" y="230" class="sm">format = LLMAnswer JSON schema · think = false</text>
+        <text x="60" y="246" class="sm">temperature 0 · num_ctx sized to prompt · num_predict 2048</text>
+        <rect class="box" x="40" y="300" width="400" height="54" rx="6"/>
+        <text x="60" y="323">Parse {value, evidence_ids}</text><text x="60" y="342" class="sm">drop ids not in the selected block set</text>
+        <rect class="box" x="40" y="384" width="400" height="54" rx="6"/>
+        <text x="60" y="407">Note literal match</text><text x="60" y="426" class="sm">value found in cited text, or flagged as paraphrase</text>
+        <rect class="box" x="40" y="462" width="400" height="44" rx="6"/>
+        <text x="60" y="489">SlotResult</text>
+        <text x="420" y="489" text-anchor="end" class="mono">NEEDS_REVIEW + model digest + prompt hash</text>
+
+        <line class="ln" x1="240" y1="74" x2="240" y2="102" marker-end="url(#a3)"/>
+        <line class="ln" x1="240" y1="158" x2="240" y2="186" marker-end="url(#a3)"/>
+        <line class="ln" x1="240" y1="254" x2="240" y2="298" marker-end="url(#a3)"/>
+        <text x="250" y="281" class="lbl">content present</text>
+        <line class="ln" x1="240" y1="354" x2="240" y2="382" marker-end="url(#a3)"/>
+        <line class="ln" x1="240" y1="438" x2="240" y2="460" marker-end="url(#a3)"/>
+
+        <!-- retry branch -->
+        <rect class="ai" x="560" y="188" width="300" height="66" rx="6"/>
+        <text x="580" y="211" class="ai-t">Retry once</text>
+        <text x="580" y="230" class="sm">format = "json" (no schema)</text>
+        <text x="580" y="246" class="sm">same prompt, think = false</text>
+        <line class="ln-ai" x1="440" y1="210" x2="558" y2="210" marker-end="url(#a3ai)"/>
+        <text x="499" y="203" text-anchor="middle" class="lbl">empty reply</text>
+        <path class="ln" d="M710,254 L710,280 L470,280 L470,312 L442,312" marker-end="url(#a3)"/>
+        <text x="590" y="274" text-anchor="middle" class="lbl">content present</text>
+
+        <!-- failure -->
+        <rect class="bad" x="560" y="350" width="400" height="76" rx="6"/>
+        <text x="580" y="374">MISSING, report still written</text>
+        <text x="580" y="394" class="sm">reason: done_reason, eval_count, thinking_chars,</text>
+        <text x="580" y="411" class="sm">or the parse error, plus the prompt hash</text>
+        <path class="ln" d="M860,232 L930,232 L930,348" marker-end="url(#a3)"/>
+        <text x="938" y="296" class="lbl">still</text>
+        <text x="938" y="309" class="lbl">empty</text>
+        <path class="ln dash" d="M440,336 L520,336 L520,388 L558,388" marker-end="url(#a3)"/>
+        <text x="480" y="330" text-anchor="middle" class="lbl">invalid JSON</text>
+      </svg>
+    </div>
+    <figcaption>One field, one call, one optional retry. The failure path ends in MISSING with diagnostics instead of an exception, so one bad answer never blocks the rest of the report.</figcaption>
+  </figure>
+
+  <div class="two">
+    <div class="tbl">
+      <table>
+        <thead><tr><th>Guardrail</th><th>Why</th></tr></thead>
+        <tbody>
+          <tr><td>Blocks of one document type</td><td>The answer can only come from the drawer the spec names.</td></tr>
+          <tr><td>Citations must be known ids</td><td>Invented ids are dropped and the reason says so.</td></tr>
+          <tr><td>Never better than NEEDS_REVIEW</td><td>Model output is always shown turquoise in Word.</td></tr>
+          <tr><td><code>think=false</code></td><td>Gemma 4 can spend the token budget reasoning and return empty content.</td></tr>
+          <tr><td>Model digest + prompt hash</td><td>A reviewer can tell which model and exact prompt produced a value.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="tbl">
+      <table>
+        <thead><tr><th>Field</th><th>Method today</th></tr></thead>
+        <tbody>
+          <tr><td>Product description, tests title, scope</td><td>Gemma</td></tr>
+          <tr><td>Batch, supplier, temperatures, operator</td><td>Label lookup</td></tr>
+          <tr><td>Specimen results, equipment, standards</td><td>Table by header</td></tr>
+          <tr><td>Average, SD, CV, min, max</td><td>Statistics (sample SD, CV in %)</td></tr>
+          <tr><td>COA, infusion page, curves, photos</td><td>Page snapshot or caption match</td></tr>
+          <tr><td>Rk (DNVGL-ST-0376, GL2010)</td><td>Not implemented, shown red</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section aria-labelledby="trace">
+  <div class="sec-head"><span class="num">4</span><h2 id="trace">The trace chain</h2></div>
+  <p>Traceability is a chain of ids that never breaks. Starting from a value in Word, each hop is a lookup, ending at the bytes of the source PDF.</p>
+  <figure>
+    <div class="scroll">
+      <svg viewBox="0 0 1000 200" role="img" aria-label="Trace chain for fabric_batch: the Word comment names the slot and tags; provenance.json holds the slot with evidence ids; index.sqlite resolves each id to page, bounding box and text; the documents table maps the fingerprint to a file; the PDF and a cropped PNG show the spot.">
+        <defs>
+          <marker id="a4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head"/></marker>
+        </defs>
+        <rect class="good" x="10" y="40" width="160" height="96" rx="6"/>
+        <text x="90" y="66" text-anchor="middle">Word value</text>
+        <text x="90" y="88" text-anchor="middle" class="mono">24B1187</text>
+        <text x="90" y="108" text-anchor="middle" class="sm">pink, comment cites</text>
+        <text x="90" y="123" text-anchor="middle" class="sm">both sources</text>
+
+        <rect class="store" x="220" y="40" width="170" height="96" rx="6"/>
+        <text x="305" y="66" text-anchor="middle">provenance.json</text>
+        <text x="305" y="88" text-anchor="middle" class="mono">fabric_batch</text>
+        <text x="305" y="108" text-anchor="middle" class="sm">CONFLICT · method kv</text>
+        <text x="305" y="123" text-anchor="middle" class="sm">evidence_ids [2]</text>
+
+        <rect class="store" x="440" y="40" width="180" height="96" rx="6"/>
+        <text x="530" y="66" text-anchor="middle">index.sqlite · blocks</text>
+        <text x="530" y="88" text-anchor="middle" class="mono">1f55ac75:p1:l6</text>
+        <text x="530" y="108" text-anchor="middle" class="sm">page 1, bbox 50,140,135,154</text>
+        <text x="530" y="123" text-anchor="middle" class="sm">"Batch N°: 24B1187"</text>
+
+        <rect class="store" x="670" y="40" width="150" height="96" rx="6"/>
+        <text x="745" y="66" text-anchor="middle">documents</text>
+        <text x="745" y="88" text-anchor="middle" class="mono">sha256 1f55ac75…</text>
+        <text x="745" y="108" text-anchor="middle" class="sm">type COA</text>
+        <text x="745" y="123" text-anchor="middle" class="sm">by filename</text>
+
+        <rect class="box" x="870" y="40" width="120" height="96" rx="6"/>
+        <text x="930" y="66" text-anchor="middle">Source</text>
+        <text x="930" y="88" text-anchor="middle" class="sm">Fabric_COA</text>
+        <text x="930" y="103" text-anchor="middle" class="sm">_24B1187.pdf</text>
+        <text x="930" y="123" text-anchor="middle" class="sm">+ crop PNG</text>
+
+        <line class="ln" x1="170" y1="88" x2="218" y2="88" marker-end="url(#a4)"/>
+        <text x="194" y="160" text-anchor="middle" class="lbl">slot name</text>
+        <line class="ln" x1="390" y1="88" x2="438" y2="88" marker-end="url(#a4)"/>
+        <text x="414" y="160" text-anchor="middle" class="lbl">block id</text>
+        <line class="ln" x1="620" y1="88" x2="668" y2="88" marker-end="url(#a4)"/>
+        <text x="644" y="160" text-anchor="middle" class="lbl">doc_sha256</text>
+        <line class="ln" x1="820" y1="88" x2="868" y2="88" marker-end="url(#a4)"/>
+        <text x="844" y="160" text-anchor="middle" class="lbl">path, re-hash</text>
+      </svg>
+    </div>
+    <figcaption>Block ids are <code>&lt;sha256[:8]&gt;:p&lt;page&gt;</code> followed by <code>:l</code> line, <code>:t r c</code> cell, <code>:i</code> image or <code>:f</code> figure. The same file bytes and parser version always give the same ids; <code>lab-report trace fabric_batch</code> walks this chain in the terminal.</figcaption>
+  </figure>
+</section>
+
+<section aria-labelledby="status">
+  <div class="sec-head"><span class="num">5</span><h2 id="status">How a status is decided</h2></div>
+  <div class="tbl">
+    <table>
+      <thead><tr><th>Status</th><th>Rule</th><th>In Word</th></tr></thead>
+      <tbody>
+        <tr><td><span class="st st-ok">VERIFIED</span></td><td>Found by code, exactly one value, and the value appears in the cited block text. Pictures: exactly one candidate matched.</td><td>No highlight</td></tr>
+        <tr><td><span class="st st-ok">COMPUTED</span></td><td>Statistics, joins or formats whose inputs are all VERIFIED. The record lists every input slot.</td><td>No highlight</td></tr>
+        <tr><td><span class="st st-turq">NEEDS_REVIEW</span></td><td>Any model output; a copied value not found in its cited text; several matching pictures.</td><td>Turquoise</td></tr>
+        <tr><td><span class="st st-pink">CONFLICT</span></td><td>Two values within one document, or a cross-check source disagrees (COA vs infusion report).</td><td>Pink</td></tr>
+        <tr><td><span class="st st-red">MISSING</span></td><td>Label, table or picture not found; model disabled, empty or unparsable; any input of a calculation missing.</td><td>Red</td></tr>
+        <tr><td><span class="st st-red">NOT_IMPLEMENTED</span></td><td>Slot exists in the template but has no method yet (Rk values).</td><td>Red</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="muted">A computed value takes the worst status of its inputs, so one conflicting cell marks the average as conflicting too.</p>
+</section>
+
+<section aria-labelledby="extend">
+  <div class="sec-head"><span class="num">6</span><h2 id="extend">Where to change things</h2></div>
+  <div class="recipes">
+    <div class="recipe"><h3>Add a field</h3><div><p>Add a slot to <code>config/report_spec.yaml</code> and a <code>{{slot}}</code> token in the template. No code change for label, table, statistics or image methods.</p></div></div>
+    <div class="recipe"><h3>Add a test type</h3><div><p>Add a document type rule, a results table entry with its columns, a stats entry and the template section. Comment #6 in the template defines which properties each test reports.</p></div></div>
+    <div class="recipe"><h3>Real machine reports</h3><div><p>Collect sample PDFs per instrument. If label and table matching are not enough for a layout, add a parser method in <code>extract.py</code> that still returns block ids.</p></div></div>
+    <div class="recipe"><h3>Scanned PDFs</h3><div><p>Pages without text need OCR or Gemma's image input in the index step, producing line blocks with boxes so the rest of the chain stays the same.</p></div></div>
+    <div class="recipe"><h3>Another model</h3><div><p>Pass <code>--model</code>. Anything implementing <code>answer(system, prompt) -&gt; JSON</code> can replace <code>OllamaClient</code>; tests use a fake one.</p></div></div>
+  </div>
+  <pre><code># config/report_spec.yaml (excerpt)
+fields:
+  fabric_batch: {method: kv, source: COA, label: "Batch N°",
+                 cross_check: [{source: INFUSION, label: Fabric batch}]}
+  product_description: {method: llm, source: TR_REQUEST, instruction: "One sentence ..."}
+images:
+  tensile_curves: {method: figure, source: MACHINE_TENSILE, caption: Stress-strain curves}</code></pre>
+</section>
+
+<section aria-labelledby="limits">
+  <div class="sec-head"><span class="num">7</span><h2 id="limits">Known limits</h2></div>
+  <ul class="limits">
+    <li>Tested only on generated dummy PDFs. Real layouts will need tuning of labels, table headers and captions.</li>
+    <li>Gemma is tested here with a fake client; the real model has to be checked on the workstation.</li>
+    <li>Rk characteristic values need the DNVGL-ST-0376 and GL2010 factors confirmed by the lab.</li>
+    <li>CV is shown in percent; the template example looks like a fraction. Needs a decision.</li>
+    <li>Template mapping in <code>template_builder.py</code> uses table order; a changed template means updating it.</li>
+  </ul>
+</section>
+
+<footer>Sister page: The Report Robot, the same pipeline explained in plain words. Source: <code>src/lab_report/pipeline/</code>, entry point <code>run_poc.py</code>.</footer>
+
+</div>
+</body>
+</html>

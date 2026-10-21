@@ -9,6 +9,10 @@
 #   format   string template over other slots                                      -> COMPUTED
 #   llm      Gemma via Ollama, must cite block ids                                 -> NEEDS_REVIEW
 #   not_implemented   placeholder kept visible in the report
+#
+# Images (section `images:`, template token {{image:<name>}})
+#   page     snapshot of a whole source page (e.g. COA for Appendix 1)
+#   figure   embedded photo or vector-drawn figure, found by its caption text
 
 template: data/templet/dnv_poc_template.docx
 decimal_comma: true
@@ -19,6 +23,7 @@ documents:
   MACHINE_TENSILE: {filename: [tensile], keywords: [Tensile]}
   COA: {filename: [coa], keywords: [Certificate of Analysis]}
   INFUSION: {filename: [infusion], keywords: [Infusion report]}
+  PICTURES: {filename: [pictures, photos], keywords: [Specimen pictures]}
 
 fields:
   tr_number: {method: kv, source: TR_REQUEST, label: "TR N°",
@@ -124,6 +129,15 @@ tables:
 stats:
   fwf: {table: fwf_results, columns: {wf: 2, vf: 2, density: 3, porosity: 2}}
   tensile: {table: tensile_results, columns: {thickness: 3, stress: 0, modulus: 1, strain: 2}}
+
+images:
+  coa_snapshot: {method: page, source: COA, page: 1, width_cm: 15}
+  infusion_snapshot: {method: page, source: INFUSION, page: 1, width_cm: 15}
+  tensile_report: {method: page, source: MACHINE_TENSILE, page: 1, width_cm: 15}
+  tensile_curves: {method: figure, source: MACHINE_TENSILE, caption: Stress-strain curves,
+                   width_cm: 15, dpi: 200}
+  pictures_before: {method: figure, source: PICTURES, caption: before test, width_cm: 11}
+  pictures_after: {method: figure, source: PICTURES, caption: after test, width_cm: 11}
 
 specimen_ids:
   - {table: fwf_results, column: specimen, test: Fiber content, direction: "-"}

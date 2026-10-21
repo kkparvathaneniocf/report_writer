@@ -19,6 +19,7 @@ from lab_report.pipeline.extract import (
     extract_table,
     verify,
 )
+from lab_report.pipeline.images import IMAGE_PREFIX, extract_image
 from lab_report.pipeline.index import PARSER_VERSION, Index, build_index
 from lab_report.pipeline.llm import LLMClient, extract_llm
 from lab_report.pipeline.models import RowGroup, SlotResult
@@ -44,7 +45,7 @@ def load_spec(path: Path) -> dict:
 
 
 def extract_all(
-    spec: dict, index: Index, llm: LLMClient | None
+    spec: dict, index: Index, llm: LLMClient | None, image_dir: Path | None = None
 ) -> tuple[dict[str, SlotResult], dict[str, RowGroup]]:
     decimal_comma = spec.get("decimal_comma", False)
     groups = {name: extract_table(name, t, index) for name, t in spec.get("tables", {}).items()}
@@ -90,6 +91,11 @@ def extract_all(
         for row in ids.rows:
             for cell in row.values():
                 results[cell.slot] = cell
+    for name, img in spec.get("images", {}).items():
+        if image_dir is None:
+            raise ValueError("image slots need an image_dir")
+        r = extract_image(name, img, index, image_dir)
+        results[r.slot] = r
     return results, groups
 
 
@@ -100,6 +106,8 @@ def save_evidence_crops(index: Index, ids: set[str], folder: Path) -> dict[str, 
     by_doc: dict[str, list] = {}
     for eid in sorted(ids):
         b = index.by_id[eid]
+        if b.kind == "page":  # the exported page image is already the evidence
+            continue
         by_doc.setdefault(b.doc_sha256, []).append(b)
     for digest, blocks in by_doc.items():
         with pymupdf.open(index.paths[digest]) as pdf:
@@ -131,8 +139,9 @@ def run_pipeline(
     index = build_index(pdfs, spec["documents"])
     index.save(output_dir / "index.sqlite")
 
-    results, groups = extract_all(spec, index, llm)
-    render_info = render(template, output_dir / "report.docx", results, groups, index)
+    results, groups = extract_all(spec, index, llm, output_dir / "images")
+    widths = {IMAGE_PREFIX + n: i.get("width_cm", 15) for n, i in spec.get("images", {}).items()}
+    render_info = render(template, output_dir / "report.docx", results, groups, index, widths)
 
     cited = {e for r in results.values() for e in r.evidence_ids}
     crops = save_evidence_crops(index, cited, output_dir / "evidence")

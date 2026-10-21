@@ -265,6 +265,37 @@ def build_template(source: Path, dest: Path) -> Path:
     _sub(body, "Test speed = Y mm/min", "Y mm/min", "{{tensile_speed}}")
     _insert_tensile_results_table(doc, _para(body, "Table of results from the CSV file"))
 
+    # Appendices: page snapshots, curves and specimen pictures ({{image:<name>}} tokens)
+    _sub(
+        body,
+        "Picture / screenshot of the COA",
+        "Picture / screenshot of the COA from the TR folder",
+        "{{image:coa_snapshot}}",
+    )
+    _sub(body, "Infusion report – Laminate #", "260612VB-A", "{{laminate_id}}")
+    _sub(
+        body,
+        "Picture / Screeshot or from TR folder",
+        "Picture / Screeshot or from TR folder or directly from WaveFront ?",
+        "{{image:infusion_snapshot}}",
+    )
+    for _ in range(2):  # "Test report" and "Pictures" appendix headings
+        _sub(
+            body,
+            "TRYY_CXXXX– Test name",
+            "TRYY_CXXXX– Test name",
+            "{{tr_number}} – {{tensile_test}}",
+        )
+    _sub(
+        body,
+        "Machine report + stress/strain curves",
+        "Machine report + stress/strain curves",
+        "{{image:tensile_report}}{{image:tensile_curves}}",
+    )
+    # The template repeats "Picture before test"; the second one is taken as "after test".
+    _sub(body, "Picture before test", "Picture before test", "{{image:pictures_before}}")
+    _sub(body, "Picture before test", "Picture before test", "{{image:pictures_after}}")
+
     dest.parent.mkdir(parents=True, exist_ok=True)
     doc.save(str(dest))
     return dest

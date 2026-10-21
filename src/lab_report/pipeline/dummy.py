@@ -198,6 +198,12 @@ def tensile_report(folder: Path) -> Path:
         [(f"{TR}_02_{i}", *row) for i, row in enumerate(TENSILE_ROWS, 1)],
         [95, 55, 50, 50, 65, 55, 60, 45],
     )
+    w.page = w.doc.new_page()
+    w.y = 60.0
+    w.text("Stress-strain curves", bold=True)
+    stress_strain_plot(w.page, pymupdf.Rect(70, 90, 520, 400))
+    w.y = 418
+    w.text("Figure 1 - Stress-strain curves, all specimens (vector graphics)")
     return w.save(folder / f"{TR}_tensile_0deg_report.pdf")
 
 
@@ -241,5 +247,73 @@ def infusion_report(folder: Path) -> Path:
     return w.save(folder / "Infusion_report_260612VB-A.pdf")
 
 
+def stress_strain_plot(page: pymupdf.Page, box: pymupdf.Rect) -> None:
+    """Vector plot like testing software output: axes, ticks and one curve per specimen."""
+    x0, y0, x1, y1 = box.x0 + 40, box.y0 + 10, box.x1 - 10, box.y1 - 30
+    page.draw_line((x0, y1), (x1, y1), width=0.8)
+    page.draw_line((x0, y1), (x0, y0), width=0.8)
+    for i in range(6):  # strain 0..3 %, stress 0..1250 MPa
+        x = x0 + i * (x1 - x0) / 6
+        page.draw_line((x, y1), (x, y1 + 4), width=0.6)
+        page.insert_text((x - 6, y1 + 15), f"{i * 0.5:.1f}", fontsize=7)
+        y = y1 - i * (y1 - y0) / 5
+        page.draw_line((x0 - 4, y), (x0, y), width=0.6)
+        page.insert_text((x0 - 30, y + 3), f"{i * 250}", fontsize=7)
+    page.insert_text((x1 - 70, y1 + 26), "Strain [%]", fontsize=8)
+    page.insert_text((box.x0, y0 - 2), "Stress [MPa]", fontsize=8)
+    colors = [(0.1, 0.3, 0.8), (0.8, 0.2, 0.2), (0.1, 0.6, 0.3), (0.6, 0.3, 0.7), (0.9, 0.5, 0.1)]
+    for row, color in zip(TENSILE_ROWS, colors, strict=True):
+        stress_max = float(row[3])
+        strain_max = float(row[5].replace(",", "."))
+        points = []
+        for k in range(41):
+            e = strain_max * k / 40
+            sigma = stress_max * (e / strain_max) * (1 - 0.06 * (e / strain_max) ** 2) / 0.94
+            sigma = min(sigma, stress_max)
+            points.append((x0 + e / 3 * (x1 - x0), y1 - sigma / 1250 * (y1 - y0)))
+        page.draw_polyline(points, color=color, width=1.1)
+
+
+def _png(width: float, height: float, draw) -> bytes:
+    """Rasterise a drawing to PNG bytes (stands in for a camera photo)."""
+    doc = pymupdf.open()
+    page = doc.new_page(width=width, height=height)
+    draw(page)
+    return page.get_pixmap(dpi=110).tobytes("png")
+
+
+def _specimens_photo(broken: bool) -> bytes:
+    def draw(page: pymupdf.Page) -> None:
+        page.draw_rect(page.rect, fill=(0.35, 0.37, 0.4), color=None)
+        for i in range(5):
+            x = 40 + i * 70
+            page.draw_rect(pymupdf.Rect(x, 30, x + 34, 270), fill=(0.86, 0.9, 0.82), color=None)
+            for ty in (30, 230):  # end tabs
+                page.draw_rect(
+                    pymupdf.Rect(x, ty, x + 34, ty + 40), fill=(0.55, 0.45, 0.3), color=None
+                )
+            page.insert_text((x + 4, 290), f"_{i + 1}", fontsize=11, color=(1, 1, 1))
+            if broken:
+                y = 110 + (i * 23) % 70
+                gap = [(x - 1, y), (x + 9, y + 6), (x + 18, y - 3), (x + 27, y + 5), (x + 35, y)]
+                page.draw_polyline(gap, color=(0.35, 0.37, 0.4), width=5)
+
+    return _png(400, 310, draw)
+
+
+def specimen_pictures(folder: Path) -> Path:
+    w = PdfWriter("Specimen pictures - Tensile 0°")
+    w.kv("TR N°", TR)
+    w.gap()
+    for broken, caption in ((False, "Specimens before test"), (True, "Specimens after test")):
+        rect = pymupdf.Rect(80, w.y, 400, w.y + 248)
+        w.page.insert_image(rect, stream=_specimens_photo(broken))
+        w.y = rect.y1 + 16
+        w.text(caption)
+        w.gap(14)
+    return w.save(folder / f"{TR}_specimen_pictures.pdf")
+
+
 def make_dummy_tr_folder(folder: Path) -> list[Path]:
-    return [f(folder) for f in (test_request, fwf_file, tensile_report, coa, infusion_report)]
+    makers = (test_request, fwf_file, tensile_report, coa, infusion_report, specimen_pictures)
+    return [f(folder) for f in makers]

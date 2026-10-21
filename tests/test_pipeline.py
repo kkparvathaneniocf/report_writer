@@ -37,6 +37,8 @@ def small_template(path: Path) -> Path:
     doc.add_paragraph("TR: {{tr_number}} / Product: {{product_description}}")
     doc.add_paragraph("Fabric batch {{fabric_batch}}, catalyst batch {{catalyst_batch}}")
     doc.add_paragraph("Wf mean {{fwf.wf.mean}} (SD {{fwf.wf.sd}}), Rk {{rk_dnv.wf}}")
+    doc.add_paragraph("{{image:coa_snapshot}}")
+    doc.add_paragraph("{{image:tensile_curves}}{{image:pictures_after}}")
     table = doc.add_table(rows=2, cols=3)
     for c, h in enumerate(["Specimen", "Wf", "Vf"]):
         table.cell(0, c).text = h
@@ -65,6 +67,7 @@ def test_pipeline_traceability(tmp_path, tr_folder):
         "TR_REQUEST",
         "FWF",
         "MACHINE_TENSILE",
+        "PICTURES",
         "COA",
         "INFUSION",
     }
@@ -82,7 +85,7 @@ def test_pipeline_traceability(tmp_path, tr_folder):
     for slot in prov["slots"]:
         for e in slot["evidence"]:
             assert e["id"] in indexed
-            assert Path(e["crop"]).exists()
+            assert e["kind"] == "page" or Path(e["crop"]).exists()  # page: image is evidence
         if slot["status"] == "VERIFIED":
             assert slot["evidence"], slot["slot"]
 
@@ -201,3 +204,31 @@ def test_ollama_schema_failure_falls_back_to_json_mode(tmp_path, tr_folder, monk
     desc = slots(prov)["product_description"]
     assert desc["value"] == "UD laminate" and desc["status"] == "NEEDS_REVIEW"
     assert desc["model"] == "ollama:gemma4:26b@08ae7ec1744b"
+
+
+def test_images_are_extracted_with_provenance(tmp_path, tr_folder):
+    out = tmp_path / "o"
+    prov = run_pipeline(tr_folder, out, SPEC, small_template(tmp_path / "t.docx"))
+    s = slots(prov)
+    for name, kind in (
+        ("coa_snapshot", "page"),
+        ("tensile_curves", "figure"),
+        ("pictures_after", "image"),
+    ):
+        img = s[f"image:{name}"]
+        assert img["status"] == "VERIFIED", img
+        assert Path(img["value"]).exists() and "png sha256" in img["reason"]
+        assert img["evidence"][0]["kind"] == kind
+    # the vector plot is found by its caption, not by an axis label
+    assert "Stress-strain" in s["image:tensile_curves"]["evidence"][0]["text"]
+    assert len(Document(str(out / "report.docx")).inline_shapes) == 3
+
+
+def test_missing_image_is_reported(tmp_path, tr_folder):
+    from lab_report.pipeline.images import extract_image
+    from lab_report.pipeline.index import build_index
+
+    index = build_index(sorted(tr_folder.glob("*.pdf")), load_spec(SPEC)["documents"])
+    spec = {"method": "figure", "source": "PICTURES", "caption": "during test"}
+    result = extract_image("pictures_during", spec, index, tmp_path)
+    assert result.status == "MISSING" and result.value is None

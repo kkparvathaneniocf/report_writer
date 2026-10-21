@@ -17,19 +17,24 @@ Status = Literal[
 
 
 class Block(BaseModel):
-    """One addressable piece of a source document: a text line or a table cell."""
+    """One addressable piece of a source document.
 
-    id: str  # "<sha8>:p<page>:l<n>" or "<sha8>:p<page>:t<t>r<r>c<c>"
+    ids: "<sha8>:p<page>" page | ":l<n>" text line | ":t<t>r<r>c<c>" table cell |
+         ":i<n>" embedded raster image | ":f<n>" vector figure (e.g. a plotted curve)
+    """
+
+    id: str
     doc_sha256: str
     file: str
     doc_type: str
     page: int
-    kind: Literal["line", "cell"]
+    kind: Literal["page", "line", "cell", "image", "figure"]
     bbox: tuple[float, float, float, float]
     text: str
     table: int | None = None
     row: int | None = None
     col: int | None = None
+    xref: int | None = None  # PDF object number of an embedded image
 
 
 class SlotResult(BaseModel):
