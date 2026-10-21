@@ -145,3 +145,59 @@ def test_full_dnv_template(tmp_path, tr_folder):
     doc = Document(str(tmp_path / "o" / "report.docx"))
     for p in doc.paragraphs:
         assert not TOKEN.search(p.text)
+
+
+class FakeOllamaClient:
+    """Stands in for ollama.Client. mode: 'thinking' = always empty content with thinking
+    text (the reported Gemma 4 failure); 'schema-empty' = empty only with a JSON schema."""
+
+    mode = "thinking"
+    calls: list = []
+
+    def __init__(self, host):
+        pass
+
+    def list(self):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(models=[SimpleNamespace(model="gemma4:26b", digest="08ae7ec1744b")])
+
+    def chat(self, model, messages, format, think, options):
+        from types import SimpleNamespace
+
+        FakeOllamaClient.calls.append({"format": format, "think": think, **options})
+        empty = self.mode == "thinking" or isinstance(format, dict)
+        content = "" if empty else LLMAnswer(value="UD laminate").model_dump_json()
+        message = SimpleNamespace(content=content, thinking="hmm " * 400 if empty else None)
+        return SimpleNamespace(message=message, done_reason="length", eval_count=2048)
+
+
+def test_ollama_empty_answer_does_not_stop_report(tmp_path, tr_folder, monkeypatch):
+    import ollama
+
+    from lab_report.pipeline.llm import OllamaClient
+
+    monkeypatch.setattr(ollama, "Client", FakeOllamaClient)
+    FakeOllamaClient.mode, FakeOllamaClient.calls = "thinking", []
+    llm = OllamaClient("gemma4:26b", "http://x")
+    prov = run_pipeline(tr_folder, tmp_path / "o", SPEC, small_template(tmp_path / "t.docx"), llm)
+    desc = slots(prov)["product_description"]
+    assert desc["status"] == "MISSING"
+    assert "empty response" in desc["reason"] and "thinking_chars=1600" in desc["reason"]
+    assert (tmp_path / "o" / "report.docx").exists()
+    assert all(c["think"] is False for c in FakeOllamaClient.calls)
+    assert FakeOllamaClient.calls[1]["format"] == "json"  # retried without the schema
+
+
+def test_ollama_schema_failure_falls_back_to_json_mode(tmp_path, tr_folder, monkeypatch):
+    import ollama
+
+    from lab_report.pipeline.llm import OllamaClient
+
+    monkeypatch.setattr(ollama, "Client", FakeOllamaClient)
+    FakeOllamaClient.mode, FakeOllamaClient.calls = "schema-empty", []
+    llm = OllamaClient("gemma4:26b", "http://x")
+    prov = run_pipeline(tr_folder, tmp_path / "o", SPEC, small_template(tmp_path / "t.docx"), llm)
+    desc = slots(prov)["product_description"]
+    assert desc["value"] == "UD laminate" and desc["status"] == "NEEDS_REVIEW"
+    assert desc["model"] == "ollama:gemma4:26b@08ae7ec1744b"

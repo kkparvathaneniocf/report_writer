@@ -4,7 +4,7 @@ type and must cite their ids; output is never better than NEEDS_REVIEW."""
 from __future__ import annotations
 
 import hashlib
-from typing import Protocol
+from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, Field
 
@@ -47,16 +47,33 @@ class OllamaClient:
             digest = None
         self.name = f"ollama:{model}@{(digest or 'unknown')[:12]}"
 
-    def answer(self, system: str, prompt: str) -> str:
-        num_ctx = min(32_768, max(4096, (len(system) + len(prompt)) // 3 + 1024))
-        response = self._client.chat(
+    def _chat(self, system: str, prompt: str, fmt: dict[str, Any] | Literal["json"]) -> Any:
+        num_ctx = min(32_768, max(4096, (len(system) + len(prompt)) // 3 + 2048))
+        return self._client.chat(
             model=self._model,
             messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}],
-            format=LLMAnswer.model_json_schema(),
-            options={"temperature": 0, "num_ctx": num_ctx, "num_predict": 512},
+            format=fmt,
+            # Gemma 4 can "think" first; thinking tokens count against num_predict and with
+            # structured output the visible answer can end up empty. Extraction needs no thinking.
+            think=False,
+            options={"temperature": 0, "num_ctx": num_ctx, "num_predict": 2048},
         )
+
+    def answer(self, system: str, prompt: str) -> str:
+        response = self._chat(system, prompt, LLMAnswer.model_json_schema())
         if not response.message.content:
-            raise RuntimeError(f"{self.name} returned an empty response")
+            # Some model/server combinations return nothing with a JSON schema; retry in plain
+            # JSON mode (the prompt already describes the expected keys).
+            response = self._chat(system, prompt, "json")
+        if not response.message.content:
+            thinking = getattr(response.message, "thinking", None) or ""
+            raise RuntimeError(
+                f"{self.name} returned an empty response "
+                f"(done_reason={getattr(response, 'done_reason', None)}, "
+                f"eval_count={getattr(response, 'eval_count', None)}, "
+                f"thinking_chars={len(thinking)}). If thinking_chars > 0 the model spent its "
+                "budget reasoning; update Ollama so `think=False` is honoured."
+            )
         return response.message.content
 
 
@@ -91,9 +108,18 @@ def extract_llm(slot: str, spec: dict, index: Index, client: LLMClient | None) -
         "Return JSON {value, evidence_ids}; evidence_ids are the bracketed ids of every "
         "snippet you used.\n\nSnippets:\n" + "\n".join(snippets)
     )
-    raw = client.answer(SYSTEM, prompt)
-    answer = LLMAnswer.model_validate_json(raw)
     prompt_hash = hashlib.sha256((SYSTEM + prompt).encode()).hexdigest()[:12]
+    try:
+        answer = LLMAnswer.model_validate_json(client.answer(SYSTEM, prompt))
+    except Exception as exc:  # noqa: BLE001 - one failing LLM field must not stop the report
+        return SlotResult(
+            slot=slot,
+            value=None,
+            status="MISSING",
+            method="llm",
+            model=client.name,
+            reason=f"LLM call failed: {exc}; prompt sha256 {prompt_hash}",
+        )
     allowed = {b.id for b in blocks}
     bad = [e for e in answer.evidence_ids if e not in allowed]
     notes = [f"prompt sha256 {prompt_hash}"]
