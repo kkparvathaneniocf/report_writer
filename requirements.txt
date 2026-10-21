@@ -1,0 +1,15 @@
+numpy>=1.26.4
+pandas>=2.2.1
+pydantic>=2.5
+openpyxl>=3.0.10
+matplotlib>=3.9
+python-pptx>=1.0.0
+ollama
+python-dotenv
+pytest>=7.0.0
+pyxlsb>=1.0.10
+pyarrow
+python-docx>=1.1
+pymupdf>=1.24
+typer>=0.12
+pyyaml>=6.0
