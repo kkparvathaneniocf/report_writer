@@ -1,21 +1,32 @@
 #!/usr/bin/env python3
 """
-Cross-platform dependency and local-model manager.
+Cross-platform task runner (replaces make): `python make.py <command> [options]`.
 
-Commands:
-    install          Install the package + dev tools (uv sync, or pip -e .[dev])
-    clean            Remove build/test caches and __pycache__ folders
+Setup
+    install          Install the package + dev tools (uv sync, or pip -e .[dev] into .venv)
     hard-install     Delete .venv and reinstall
-    ollama-install   Install the native Ollama runtime
-    ollama-pull      Download the configured Gemma model
-    ollama-run       Start an interactive chat with the configured model
-    ollama-setup     Install dependencies, install Ollama, pull and run the model
+    lock / upgrade   Refresh uv.lock (requires uv)
+    clean            Remove build/test caches and __pycache__ folders
 
-Examples:
+Quality
+    test | lint | lint-fix | format | format-check | type-check
+    check            format-check + lint + type-check + test (stops at first failure)
+
+PDF pipeline POC
+    poc              Dummy TR folder -> tokenized template -> report, without LLM
+    poc-llm          Same, with Gemma via Ollama (--model)
+    trace            Show where a report value came from (--slot fabric_batch)
+    demo             Legacy CSV-only demo (fiber statistics, no LLM)
+
+Ollama
+    ollama-install | ollama-pull | ollama-run | ollama-setup
+
+Examples
     python make.py install
-    python make.py ollama-setup
-    python make.py ollama-run
-    python make.py ollama-run --model gemma4:12b
+    python make.py check
+    python make.py poc
+    python make.py poc-llm --model gemma4:26b
+    python make.py trace --slot fwf.wf.mean
 """
 
 from __future__ import annotations
@@ -35,7 +46,9 @@ from pathlib import Path
 PROJECT_ROOT = Path.cwd()
 VENV_DIR = PROJECT_ROOT / ".venv"
 
+PYTHON_VERSION = "3.12"
 DEFAULT_OLLAMA_MODEL = "gemma4:26b"
+DEFAULT_TR = "TR26_C0143"
 OLLAMA_API_URL = "http://127.0.0.1:11434"
 OLLAMA_WINDOWS_INSTALLER_URL = "https://ollama.com/download/OllamaSetup.exe"
 OLLAMA_LINUX_INSTALL_SCRIPT_URL = "https://ollama.com/install.sh"
@@ -77,7 +90,7 @@ def install_dependencies() -> None:
     Prefers uv (uses uv.lock); falls back to pip in .venv.
     """
     if shutil.which("uv"):
-        run_command(["uv", "sync", "--extra", "dev"])
+        run_command(["uv", "sync", "--python", PYTHON_VERSION, "--extra", "dev"])
         return
 
     create_venv()
@@ -388,55 +401,115 @@ def setup_ollama(model: str) -> None:
     run_ollama_model(model)
 
 
+# ============================================================ project tasks
+
+# Console tools and the module to use when running them as `python -m` without uv.
+MODULES = {"lab-report": "lab_report.cli", "pytest": "pytest", "ruff": "ruff", "mypy": "mypy"}
+
+
+def tool(name: str, *args: str) -> None:
+    """Run a project tool inside the environment: `uv run` if available, else .venv python."""
+    if shutil.which("uv"):
+        run_command(["uv", "run", name, *args])
+        return
+    python = get_venv_python()
+    if not python.exists():
+        raise FileNotFoundError("No .venv found. Run `python make.py install` first.")
+    run_command([str(python), "-m", MODULES[name], *args])
+
+
+def require_uv() -> None:
+    if not shutil.which("uv"):
+        raise RuntimeError("This command needs uv: https://docs.astral.sh/uv/")
+
+
+def check() -> None:
+    tool("ruff", "format", "--check", ".")
+    tool("ruff", "check", ".")
+    tool("mypy", "src")
+    tool("pytest", "-q")
+
+
+def demo() -> None:
+    raw = PROJECT_ROOT / "data" / "raw"
+    raw.mkdir(parents=True, exist_ok=True)
+    shutil.copy(PROJECT_ROOT / "examples" / "TR26_C0143_fiber.csv", raw)
+    tool("lab-report", "run", "--skip-llm", "--input-dir", str(raw), "--output-dir", "output")
+
+
+def poc(tr: str, model: str | None) -> None:
+    folder, out = f"data/raw/{tr}", f"output/{tr}"
+    tool("lab-report", "make-dummy", "--folder", folder)
+    tool("lab-report", "build-template")
+    llm = ["--model", model] if model else ["--no-llm"]
+    tool("lab-report", "report", "--input-dir", folder, "--output-dir", out, *llm)
+
+
+def trace(tr: str, slot: str | None) -> None:
+    if not slot:
+        raise ValueError("Pass --slot, e.g. python make.py trace --slot fabric_batch")
+    tool("lab-report", "trace", slot, "--output-dir", f"output/{tr}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description=("Manage Python dependencies and run local Ollama models.")
+        description="Project task runner (setup, quality checks, PDF pipeline POC, Ollama).",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__,
     )
-
-    parser.add_argument(
-        "command",
-        choices=[
-            "install",
-            "clean",
-            "hard-install",
-            "ollama-install",
-            "ollama-pull",
-            "ollama-run",
-            "ollama-setup",
-        ],
-        help="Action to perform.",
-    )
-
+    parser.add_argument("command", choices=sorted(COMMANDS), help="Task to run.")
     parser.add_argument(
         "--model",
         default=DEFAULT_OLLAMA_MODEL,
-        help=(f"Ollama model tag. Default: {DEFAULT_OLLAMA_MODEL}"),
+        help=f"Ollama model tag. Default: {DEFAULT_OLLAMA_MODEL}",
     )
-
+    parser.add_argument("--tr", default=DEFAULT_TR, help=f"TR folder name. Default: {DEFAULT_TR}")
+    parser.add_argument("--slot", help="Report slot for `trace`, e.g. fwf.wf.mean")
     args = parser.parse_args()
 
     try:
-        if args.command == "install":
-            install_dependencies()
-        elif args.command == "clean":
-            clean_cache()
-        elif args.command == "hard-install":
-            hard_install()
-        elif args.command == "ollama-install":
-            install_ollama()
-        elif args.command == "ollama-pull":
-            pull_ollama_model(args.model)
-        elif args.command == "ollama-run":
-            run_ollama_model(args.model, pull_first=True)
-        elif args.command == "ollama-setup":
-            setup_ollama(args.model)
-
+        COMMANDS[args.command](args)
     except KeyboardInterrupt:
         print("\nOperation cancelled by user.")
         sys.exit(130)
+    except subprocess.CalledProcessError as error:
+        print(f"\nFAILED (exit {error.returncode}): {subprocess.list2cmdline(error.cmd)}")
+        sys.exit(error.returncode or 1)
     except Exception as error:  # noqa: BLE001 - top-level CLI error reporting
         print(f"\nERROR: {error}")
         sys.exit(1)
+
+
+COMMANDS = {
+    # setup
+    "install": lambda a: install_dependencies(),
+    "hard-install": lambda a: hard_install(),
+    "lock": lambda a: (require_uv(), run_command(["uv", "lock"])),
+    "upgrade": lambda a: (
+        require_uv(),
+        run_command(["uv", "lock", "--upgrade"]),
+        install_dependencies(),
+    ),
+    "clean": lambda a: clean_cache(),
+    # quality
+    "test": lambda a: tool("pytest", "-q"),
+    "lint": lambda a: tool("ruff", "check", "."),
+    "lint-fix": lambda a: tool("ruff", "check", ".", "--fix"),
+    "format": lambda a: tool("ruff", "format", "."),
+    "format-check": lambda a: tool("ruff", "format", "--check", "."),
+    "type-check": lambda a: tool("mypy", "src"),
+    "check": lambda a: check(),
+    # PDF pipeline POC
+    "poc": lambda a: poc(a.tr, None),
+    "poc-llm": lambda a: poc(a.tr, a.model),
+    "trace": lambda a: trace(a.tr, a.slot),
+    "demo": lambda a: demo(),
+    # Ollama
+    "ollama-install": lambda a: install_ollama(),
+    "ollama-pull": lambda a: pull_ollama_model(a.model),
+    "ollama-run": lambda a: run_ollama_model(a.model, pull_first=True),
+    "ollama-setup": lambda a: setup_ollama(a.model),
+}
 
 
 if __name__ == "__main__":

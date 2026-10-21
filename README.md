@@ -13,31 +13,63 @@ A runnable **first increment**, not a production-qualified laboratory reporting 
 
 ## Install (Windows PowerShell / macOS / Linux)
 
-Requires Python 3.11+, [uv](https://docs.astral.sh/uv/) (recommended) and Ollama running locally.
+Requires Python 3.11+ and, for LLM fields, Ollama running locally. No `make` or `uv` needed.
 
 ```bash
-make install          # uv sync --extra dev (creates .venv from uv.lock)
-make check            # format-check, lint, mypy, pytest
-make ollama-setup     # pull the default model (gemma4:26b)
+python -m venv .venv
+.venv\Scripts\activate            # Windows   (macOS/Linux: source .venv/bin/activate)
+python -m pip install -e ".[dev]"
+python -m pytest -q
 ```
 
-Without `make` (e.g. Windows): `python make.py install`, `python make.py ollama-setup`.
-Without uv: `python -m venv .venv`, activate it, then `python -m pip install -e ".[dev]"`.
-
-Dependencies are declared only in `pyproject.toml`; `uv.lock` pins the exact versions.
+`python make.py <command>` wraps common tasks (`install`, `check`, `poc`, `poc-llm`, `trace`,
+`ollama-setup`, ...; see `python make.py --help`). It uses uv when installed, else `.venv`.
+Dependencies are declared only in `pyproject.toml`; `uv.lock` pins exact versions for uv users.
 
 ## Quick demo without Ollama
 
 ```bash
-make demo             # copies examples/TR26_C0143_fiber.csv to data/raw and runs --skip-llm
+python make.py demo   # copies examples/TR26_C0143_fiber.csv to data/raw and runs --skip-llm
 ```
+
+## PDF pipeline POC (dummy data)
+
+End-to-end check of the target architecture on generated PDFs that mimic a TR folder
+(test request, FWF file, tensile machine report, fabric COA, infusion report):
+
+```bash
+python run_poc.py                       # no LLM: LLM fields are reported MISSING
+python run_poc.py --llm                 # with Gemma via Ollama (default gemma4:26b)
+python run_poc.py --llm --model gemma4:12b
+lab-report trace fabric_batch           # where did a value come from?
+```
+
+Output in `output/TR26_C0143/`: `report.docx`, `provenance.json`, `index.sqlite`, `evidence/*.png`.
+
+Needs `data/templet/DNV report_description for agents AI.docx`; `build-template` turns it into
+`data/templet/dnv_poc_template.docx` with `{{slot}}` tokens.
+
+```
+PDFs ─► register+classify ─► index (lines + table cells, stable ids, bbox) ─► index.sqlite
+     ─► extract per config/report_spec.yaml (kv | table | llm) ─► verify against cited text
+     ─► compute (stats, joins) ─► render DOCX (Word comment per value) ─► provenance.json
+                                                                       ─► evidence/*.png crops
+```
+
+Every value carries a status: `VERIFIED` (found literally in the cited block), `COMPUTED`,
+`NEEDS_REVIEW` (LLM output), `CONFLICT` (sources disagree), `MISSING`, `NOT_IMPLEMENTED`.
+In the DOCX, non-verified values are highlighted (turquoise review, pink conflict, red missing).
+The dummy data plants a fabric-batch conflict (COA vs infusion report) and a missing catalyst
+batch so these paths are exercised.
+
+Block id format: `<sha256[:8]>:p<page>:l<line>` or `<sha256[:8]>:p<page>:t<table>r<row>c<col>`.
 
 ## Run with Ollama
 
 Place source documents in `data/raw` and run:
 
 ```bash
-make run              # or: uv run lab-report run --model gemma4:26b
+lab-report run --model gemma4:26b
 ```
 
 To populate explicit placeholders in your own DOCX:

@@ -1,0 +1,134 @@
+# Report specification: which template slot is filled from which source document, and how.
+# Derived from the comments in "DNV report_description for agents AI.docx".
+#
+# Methods
+#   kv       "Label: value" line (or label cell + value cell) in a source document  -> VERIFIED
+#   table    rows of a ruled table, matched by header text                          -> VERIFIED
+#   stats    mean / sd / cv / min / max / count over a table column               -> COMPUTED
+#   join     concatenate table rows with a row template                            -> COMPUTED
+#   format   string template over other slots                                      -> COMPUTED
+#   llm      Gemma via Ollama, must cite block ids                                 -> NEEDS_REVIEW
+#   not_implemented   placeholder kept visible in the report
+
+template: data/templet/dnv_poc_template.docx
+decimal_comma: true
+
+documents:
+  TR_REQUEST: {filename: [test_request, request], keywords: [Test Request]}
+  FWF: {filename: [fwf], keywords: [ISO 1172]}
+  MACHINE_TENSILE: {filename: [tensile], keywords: [Tensile]}
+  COA: {filename: [coa], keywords: [Certificate of Analysis]}
+  INFUSION: {filename: [infusion], keywords: [Infusion report]}
+
+fields:
+  tr_number: {method: kv, source: TR_REQUEST, label: "TR N°",
+              cross_check: [{source: FWF, label: "TR N°"}, {source: MACHINE_TENSILE, label: "TR N°"}]}
+  product_name: {method: kv, source: TR_REQUEST, label: Product name}
+  product_description:
+    method: llm
+    source: TR_REQUEST
+    instruction: >-
+      One sentence (max 25 words) describing the product: reinforcement, resin and use.
+      Use only facts stated in the snippets.
+  tests_description:
+    method: llm
+    source: TR_REQUEST
+    instruction: >-
+      Short title listing the requested tests with their standard,
+      e.g. "Fiber content (ISO 1172) and tensile 0° (ISO 527-4) tests".
+  scope_summary:
+    method: llm
+    source: TR_REQUEST
+    instruction: >-
+      Two to three sentences for the report Scope section: which material was tested,
+      which tests and standards, number of specimens. Draft for the author to edit.
+  tasks_tests: {method: join, table: requested_tests, row: "{test} - {standard}", sep: "\n"}
+
+  # Fiber content (FWF testing file)
+  fwf_technician: {method: kv, source: FWF, label: Technician}
+  resin_density: {method: kv, source: FWF, label: Resin density, pattern: '([\d.,]+)'}
+  fiber_density: {method: kv, source: FWF, label: Fiber density, pattern: '([\d.,]+)'}
+
+  # Tensile machine report
+  tensile_test: {method: kv, source: MACHINE_TENSILE, label: Test}
+  tensile_standard: {method: kv, source: MACHINE_TENSILE, label: Standard}
+  tensile_title: {method: format, template: "{tensile_test} according to {tensile_standard}"}
+  tensile_technician: {method: kv, source: MACHINE_TENSILE, label: Operator}
+  tensile_prestress: {method: kv, source: MACHINE_TENSILE, label: Prestress}
+  tensile_speed: {method: kv, source: MACHINE_TENSILE, label: Test speed}
+
+  # Reinforcement (COA, cross-checked with infusion report)
+  fabric_description: {method: kv, source: COA, label: Material description}
+  fabric_supplier: {method: kv, source: COA, label: Supplier}
+  fabric_production_date: {method: kv, source: COA, label: Production date}
+  fabric_code: {method: kv, source: COA, label: Material code}
+  fabric_batch: {method: kv, source: COA, label: "Batch N°",
+                 cross_check: [{source: INFUSION, label: Fabric batch}]}
+  fabric_roll: {method: kv, source: COA, label: "Roll N°"}
+  fabric_plant: {method: kv, source: COA, label: Mfg plant}
+
+  # Resin & manufacturing (infusion report, Appendix 2)
+  resin_name: {method: kv, source: INFUSION, label: Resin}
+  resin_supplier: {method: kv, source: INFUSION, label: Resin supplier}
+  resin_batch: {method: kv, source: INFUSION, label: Resin batch}
+  catalyst_name: {method: kv, source: INFUSION, label: Catalyst}
+  catalyst_supplier: {method: kv, source: INFUSION, label: Catalyst supplier}
+  catalyst_batch: {method: kv, source: INFUSION, label: Catalyst batch}
+  laminate_id: {method: kv, source: INFUSION, label: "Laminate N°",
+                cross_check: [{source: TR_REQUEST, label: "Laminate N°"}]}
+  depression: {method: kv, source: INFUSION, label: Depression}
+  infusion_temp: {method: kv, source: INFUSION, label: Infusion temperature}
+  curing_temp: {method: kv, source: INFUSION, label: Curing temperature}
+  postcure: {method: kv, source: INFUSION, label: Post-curing}
+  sop: {method: kv, source: INFUSION, label: "SOP N°"}
+
+  # Characteristic values: method not implemented yet (needs DNVGL-ST-0376 / GL2010 k-factors).
+  rk_dnv.wf: {method: not_implemented}
+  rk_dnv.vf: {method: not_implemented}
+  rk_dnv.porosity: {method: not_implemented}
+  rk_dnv.tensile: {method: not_implemented}
+  rk_gl.wf: {method: not_implemented}
+  rk_gl.vf: {method: not_implemented}
+  rk_gl.porosity: {method: not_implemented}
+  rk_gl.tensile: {method: not_implemented}
+
+tables:
+  requested_tests:
+    source: TR_REQUEST
+    columns: {test: Test, direction: Direction, standard: Standard, specimens: Specimens}
+  standards:
+    source: TR_REQUEST
+    columns: {number: Number, title: Title, dnv: DNV Certified}
+  procedures:
+    source: TR_REQUEST
+    columns: {number: Number, title: Title}
+    exclude_headers: [DNV Certified]
+  fwf_equipment:
+    source: FWF
+    columns: {number: "N°", name: Equipment, description: Type, calibration: Calibration}
+  fwf_results:
+    source: FWF
+    columns: {specimen: Specimen, wf: Wf, vf: Vf, density: Density, porosity: Porosity}
+    derive:
+      ref: {from: specimen, regex: '^(.*)_\d+$'}
+      num: {from: specimen, regex: '_(\d+)$'}
+  tensile_equipment:
+    source: MACHINE_TENSILE
+    columns: {number: "N°", name: Equipment, description: Type}
+  tensile_results:
+    # Tensile 0°: report only modulus, stress at break and linear estimated strain.
+    source: MACHINE_TENSILE
+    columns: {specimen: Specimen, thickness: Thickness, stress: Stress at break,
+              modulus: Modulus, strain: Lin. est. strain}
+
+stats:
+  fwf: {table: fwf_results, columns: {wf: 2, vf: 2, density: 3, porosity: 2}}
+  tensile: {table: tensile_results, columns: {thickness: 3, stress: 0, modulus: 1, strain: 2}}
+
+specimen_ids:
+  - {table: fwf_results, column: specimen, test: Fiber content, direction: "-"}
+  - {table: tensile_results, column: specimen, test: Tensile, direction: "0"}
+
+# Yellow fields in the template: entered by a person, never by the pipeline.
+manual: [requester, test_period, written_by, written_date, reviewed_by, reviewed_date,
+         distribution_list, version_date]

@@ -79,5 +79,83 @@ def run(
     typer.echo(f"Saved report and evidence manifest under {output_dir}")
 
 
+# --------------------------------------------------------------------------- PDF pipeline POC
+
+DNV_SOURCE = Path("data/templet/DNV report_description for agents AI.docx")
+DNV_TOKENIZED = Path("data/templet/dnv_poc_template.docx")
+SPEC = Path("config/report_spec.yaml")
+
+
+@app.command("make-dummy")
+def make_dummy(folder: Path = typer.Option(Path("data/raw/TR26_C0143"))) -> None:
+    """Generate a fake TR folder of PDFs (with one planted conflict and one missing value)."""
+    from lab_report.pipeline.dummy import make_dummy_tr_folder
+
+    for path in make_dummy_tr_folder(folder):
+        typer.echo(f"wrote {path}")
+
+
+@app.command("build-template")
+def build_template_cmd(
+    source: Path = typer.Option(DNV_SOURCE), dest: Path = typer.Option(DNV_TOKENIZED)
+) -> None:
+    """Convert the DNV report description into a tokenized template."""
+    from lab_report.pipeline.template_builder import build_template
+
+    typer.echo(f"wrote {build_template(source, dest)}")
+
+
+@app.command()
+def report(
+    input_dir: Path = typer.Option(Path("data/raw/TR26_C0143"), help="TR folder with PDFs"),
+    output_dir: Path = typer.Option(Path("output/TR26_C0143")),
+    spec: Path = typer.Option(SPEC),
+    template: Path | None = typer.Option(None, help="Defaults to the template in the spec"),
+    model: str = typer.Option("gemma4:26b"),
+    host: str = typer.Option("http://localhost:11434"),
+    no_llm: bool = typer.Option(False, help="Skip LLM fields (they are reported MISSING)"),
+) -> None:
+    """Build report.docx + provenance.json + index.sqlite + evidence crops from PDFs."""
+    from lab_report.pipeline.llm import OllamaClient
+    from lab_report.pipeline.run import run_pipeline
+
+    llm = None if no_llm else OllamaClient(model, host)
+    prov = run_pipeline(input_dir, output_dir, spec, template, llm)
+    for doc in prov["documents"]:
+        typer.echo(f"  {doc['doc_type']:<16} {doc['file']}  ({doc['classified_by']})")
+    typer.echo(f"Status of values placed in the report: {prov['status_counts']}")
+    for s in prov["slots"]:
+        if s["in_report"] and s["status"] not in ("VERIFIED", "COMPUTED"):
+            typer.echo(f"  {s['status']:<15} {s['slot']:<28} {s['reason'] or ''}")
+    if prov["unfilled_tokens"]:
+        typer.echo(f"Unfilled template tokens: {prov['unfilled_tokens']}", err=True)
+    typer.echo(f"Manual fields still to enter: {', '.join(prov['manual_fields'])}")
+    typer.echo(f"Output: {output_dir}")
+
+
+@app.command()
+def trace(
+    slot: str = typer.Argument(..., help="Slot name, e.g. fabric_batch or fwf.wf.mean"),
+    output_dir: Path = typer.Option(Path("output/TR26_C0143")),
+) -> None:
+    """Show where a report value came from."""
+    prov = json.loads((output_dir / "provenance.json").read_text(encoding="utf-8"))
+    by_slot = {s["slot"]: s for s in prov["slots"]}
+    if slot not in by_slot:
+        close = [s for s in by_slot if slot in s][:10]
+        raise typer.BadParameter(f"unknown slot {slot!r}. Similar: {close}")
+    s = by_slot[slot]
+    typer.echo(f"{s['slot']} = {s['value']!r}  [{s['status']}] via {s['method']}")
+    if s["reason"]:
+        typer.echo(f"  note: {s['reason']}")
+    if s["model"]:
+        typer.echo(f"  model: {s['model']}")
+    if s["inputs"]:
+        typer.echo(f"  inputs: {', '.join(s['inputs'])}")
+    for e in s["evidence"]:
+        typer.echo(f"  ← {e['file']} p.{e['page']} bbox={e['bbox']} [{e['id']}]")
+        typer.echo(f"      “{e['text']}”  crop: {e['crop']}")
+
+
 if __name__ == "__main__":
     app()

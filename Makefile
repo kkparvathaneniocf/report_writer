@@ -6,12 +6,13 @@ INPUT ?= data/raw
 OUTPUT ?= output
 
 .PHONY: help install install-locked upgrade lock test lint lint-fix format format-check \
-        type-check check demo run inspect ollama-setup build clean clean-venv reset
+        type-check check demo run inspect ollama-setup poc poc-llm trace build clean clean-venv reset
 
 help:
 	@echo "Setup:     install | install-locked | upgrade | lock | reset"
 	@echo "Quality:   test | lint | lint-fix | format | format-check | type-check | check"
 	@echo "Run:       demo (no LLM) | run [MODEL=$(MODEL)] | inspect | ollama-setup"
+	@echo "PDF POC:   poc (no LLM) | poc-llm [MODEL=$(MODEL)] | trace SLOT=fabric_batch"
 	@echo "Misc:      build | clean | clean-venv"
 
 # ---------------------------------------------------------------- setup
@@ -70,6 +71,22 @@ inspect:
 
 ollama-setup:
 	uv run python make.py ollama-pull --model $(MODEL)
+
+# PDF -> DOCX pipeline on generated dummy data (see README "PDF pipeline POC").
+TR ?= TR26_C0143
+
+poc:
+	uv run lab-report make-dummy --folder data/raw/$(TR)
+	uv run lab-report build-template
+	uv run lab-report report --no-llm --input-dir data/raw/$(TR) --output-dir output/$(TR)
+
+poc-llm:
+	uv run lab-report make-dummy --folder data/raw/$(TR)
+	uv run lab-report build-template
+	uv run lab-report report --model $(MODEL) --input-dir data/raw/$(TR) --output-dir output/$(TR)
+
+trace:
+	uv run lab-report trace "$(SLOT)" --output-dir output/$(TR)
 
 # ---------------------------------------------------------------- misc
 
