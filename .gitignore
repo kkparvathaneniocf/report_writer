@@ -6,3 +6,7 @@ output/*
 data/raw/*
 !data/raw/.gitkeep
 *.pyc
+.mypy_cache/
+build/
+dist/
+*.egg-info/

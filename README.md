@@ -13,30 +13,23 @@ A runnable **first increment**, not a production-qualified laboratory reporting 
 
 ## Install (Windows PowerShell / macOS / Linux)
 
-Requires Python 3.11+ and Ollama installed and running locally.
+Requires Python 3.11+, [uv](https://docs.astral.sh/uv/) (recommended) and Ollama running locally.
 
 ```bash
-ollama pull gemma4:26b
-python -m venv .venv
+make install          # uv sync --extra dev (creates .venv from uv.lock)
+make check            # format-check, lint, mypy, pytest
+make ollama-setup     # pull the default model (gemma4:26b)
 ```
 
-Activate `.venv`: Windows PowerShell: `.venv\Scripts\Activate.ps1`; macOS/Linux: `source .venv/bin/activate`.
+Without `make` (e.g. Windows): `python make.py install`, `python make.py ollama-setup`.
+Without uv: `python -m venv .venv`, activate it, then `python -m pip install -e ".[dev]"`.
 
-```bash
-python -m pip install -e ".[dev]"
-pytest -q
-```
+Dependencies are declared only in `pyproject.toml`; `uv.lock` pins the exact versions.
 
 ## Quick demo without Ollama
 
 ```bash
-mkdir -p data/raw
-```
-
-Copy `examples/TR26_C0143_fiber.csv` to `data/raw/`, then:
-
-```bash
-lab-report run --skip-llm
+make demo             # copies examples/TR26_C0143_fiber.csv to data/raw and runs --skip-llm
 ```
 
 ## Run with Ollama
@@ -44,7 +37,7 @@ lab-report run --skip-llm
 Place source documents in `data/raw` and run:
 
 ```bash
-lab-report run --model gemma4:26b
+make run              # or: uv run lab-report run --model gemma4:26b
 ```
 
 To populate explicit placeholders in your own DOCX:

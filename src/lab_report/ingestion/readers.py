@@ -4,9 +4,9 @@ import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 
-from docx import Document
-import fitz
 import pandas as pd
+import pymupdf
+from docx import Document
 
 
 @dataclass(frozen=True)
@@ -26,7 +26,7 @@ def read_file(path: Path) -> list[Fragment]:
     parts: list[Fragment] = []
     suffix = path.suffix.lower()
     if suffix == ".docx":
-        doc = Document(path)
+        doc = Document(str(path))
         for i, p in enumerate(doc.paragraphs, 1):
             if p.text.strip():
                 parts.append(Fragment(path.name, digest, f"paragraph:{i}", p.text.strip()))
@@ -36,7 +36,7 @@ def read_file(path: Path) -> list[Fragment]:
                 if value.strip(" |"):
                     parts.append(Fragment(path.name, digest, f"table:{t}/row:{r}", value))
     elif suffix == ".pdf":
-        with fitz.open(path) as pdf:
+        with pymupdf.open(path) as pdf:
             for i, page in enumerate(pdf, 1):
                 text = page.get_text("text").strip()
                 if text:

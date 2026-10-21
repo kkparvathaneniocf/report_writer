@@ -1,8 +1,10 @@
 from pathlib import Path
+
 import pytest
+
 from lab_report.agents.fiber_content import calculate_fiber_content
-from lab_report.validation.evidence import validate_output
 from lab_report.models import AgentOutput, ExtractedField
+from lab_report.validation.evidence import validate_output
 
 
 def test_known_fiber_values():
@@ -15,7 +17,10 @@ def test_known_fiber_values():
 
 
 def test_missing_evidence_flagged():
-    result = AgentOutput(section_id="a", fields=[ExtractedField(field_name="claim", value="abc", evidence_ids=["FAKE"])])
+    result = AgentOutput(
+        section_id="a",
+        fields=[ExtractedField(field_name="claim", value="abc", evidence_ids=["FAKE"])],
+    )
     assert validate_output(result, [], []).fields[0].status == "NEEDS_REVIEW"
 
 

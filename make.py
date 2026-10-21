@@ -3,9 +3,9 @@
 Cross-platform dependency and local-model manager.
 
 Commands:
-    install          Create .venv, install requirements and the Python Ollama client
-    clean            Clean pip and Python cache folders
-    hard-install     Recreate .venv and reinstall Python dependencies
+    install          Install the package + dev tools (uv sync, or pip -e .[dev])
+    clean            Remove build/test caches and __pycache__ folders
+    hard-install     Delete .venv and reinstall
     ollama-install   Install the native Ollama runtime
     ollama-pull      Download the configured Gemma model
     ollama-run       Start an interactive chat with the configured model
@@ -34,8 +34,6 @@ from pathlib import Path
 
 PROJECT_ROOT = Path.cwd()
 VENV_DIR = PROJECT_ROOT / ".venv"
-REQUIREMENTS_FILE = PROJECT_ROOT / "requirements.txt"
-LOCK_FILE = PROJECT_ROOT / "requirements.lock"
 
 DEFAULT_OLLAMA_MODEL = "gemma4:26b"
 OLLAMA_API_URL = "http://127.0.0.1:11434"
@@ -74,189 +72,43 @@ def create_venv() -> None:
 
 
 def install_dependencies() -> None:
-    if not REQUIREMENTS_FILE.exists():
-        raise FileNotFoundError(f"Missing requirements file: {REQUIREMENTS_FILE}")
+    """Install the package (editable) with dev extras from pyproject.toml.
+
+    Prefers uv (uses uv.lock); falls back to pip in .venv.
+    """
+    if shutil.which("uv"):
+        run_command(["uv", "sync", "--extra", "dev"])
+        return
+
     create_venv()
-    venv_python = get_venv_python()
-
-    print("\nUpgrading pip...")
-    run_command(
-        [
-            str(venv_python),
-            "-m",
-            "pip",
-            "install",
-            "--upgrade",
-            "pip",
-        ]
-    )
-
-    print("\nInstalling dependencies from requirements.txt...")
-    run_command(
-        [
-            str(venv_python),
-            "-m",
-            "pip",
-            "install",
-            "-r",
-            str(REQUIREMENTS_FILE),
-        ]
-    )
-
-    # This installs only the Python client in the virtual environment.
-    # The native Ollama runtime is installed separately at operating-system level.
-    print("\nInstalling the Python Ollama client in .venv...")
-    run_command(
-        [
-            str(venv_python),
-            "-m",
-            "pip",
-            "install",
-            "--upgrade",
-            "ollama",
-        ]
-    )
-
-    create_lock_file()
-
-
-def create_lock_file() -> None:
-    venv_python = get_venv_python()
-
-    if not venv_python.exists():
-        raise FileNotFoundError("Virtual-environment Python was not found. Run install first.")
-
-    print(f"\nCreating lock file: {LOCK_FILE.name}")
-
-    result = subprocess.run(
-        [str(venv_python), "-m", "pip", "freeze"],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-
-    LOCK_FILE.write_text(result.stdout, encoding="utf-8")
-    print(f"Lock file created: {LOCK_FILE}")
+    venv_python = str(get_venv_python())
+    run_command([venv_python, "-m", "pip", "install", "--upgrade", "pip"])
+    run_command([venv_python, "-m", "pip", "install", "-e", ".[dev]"])
 
 
 def clean_cache() -> None:
-    print("\nCleaning pip cache...")
-
-    venv_python = get_venv_python()
-    python_executable = str(venv_python) if venv_python.exists() else sys.executable
-
-    run_command(
-        [python_executable, "-m", "pip", "cache", "purge"],
-        check=False,
-    )
-
-    cache_dirs = [
-        ".pytest_cache",
-        ".mypy_cache",
-        ".ruff_cache",
-        ".tox",
-        "htmlcov",
-    ]
-
+    cache_dirs = [".pytest_cache", ".mypy_cache", ".ruff_cache", ".tox", "htmlcov", "build", "dist"]
     for cache_dir in cache_dirs:
         path = PROJECT_ROOT / cache_dir
         if path.exists():
             print(f"Removing cache folder: {path}")
             shutil.rmtree(path, ignore_errors=True)
 
-    print("\nRemoving __pycache__ folders and .pyc files...")
-
+    print("\nRemoving __pycache__ folders...")
     for path in PROJECT_ROOT.rglob("__pycache__"):
-        shutil.rmtree(path, ignore_errors=True)
-
-    for path in PROJECT_ROOT.rglob("*.pyc"):
-        path.unlink(missing_ok=True)
+        if VENV_DIR not in path.parents:
+            shutil.rmtree(path, ignore_errors=True)
 
     print("\nClean completed.")
 
 
-def kill_python_processes() -> None:
-    """
-    Kill other Python processes without terminating this script.
-    """
-
-    current_pid = os.getpid()
-    system = platform.system()
-
-    print("\nKilling other running Python processes...")
-
-    if system == "Windows":
-        powershell_command = (
-            "Get-Process python, pythonw -ErrorAction SilentlyContinue "
-            f"| Where-Object {{ $_.Id -ne {current_pid} }} "
-            "| Stop-Process -Force"
-        )
-
-        run_command(
-            [
-                "powershell",
-                "-NoProfile",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-Command",
-                powershell_command,
-            ],
-            check=False,
-        )
-        return
-
-    pgrep = shutil.which("pgrep")
-    if pgrep is None:
-        print("pgrep was not found; skipping process cleanup.")
-        return
-
-    result = subprocess.run(
-        [pgrep, "-f", "python"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-    if not result.stdout.strip():
-        print("No other Python processes found.")
-        return
-
-    for line in result.stdout.splitlines():
-        try:
-            pid = int(line.strip())
-        except ValueError:
-            continue
-
-        if pid == current_pid:
-            continue
-
-        try:
-            os.kill(pid, 9)
-            print(f"Killed Python process: {pid}")
-        except ProcessLookupError:
-            pass
-        except PermissionError:
-            print(f"Permission denied while killing process: {pid}")
-
-
-def remove_venv_and_lock() -> None:
-    if VENV_DIR.exists():
-        print(f"\nRemoving virtual environment: {VENV_DIR}")
-        shutil.rmtree(VENV_DIR, ignore_errors=True)
-
-    if LOCK_FILE.exists():
-        print(f"Removing lock file: {LOCK_FILE}")
-        LOCK_FILE.unlink()
-
-
 def hard_install() -> None:
     print("\nStarting hard install...")
-
-    kill_python_processes()
-    remove_venv_and_lock()
+    if VENV_DIR.exists():
+        print(f"Removing virtual environment: {VENV_DIR}")
+        shutil.rmtree(VENV_DIR, ignore_errors=True)
     clean_cache()
     install_dependencies()
-
     print("\nHard install completed successfully.")
 
 
@@ -346,9 +198,11 @@ def download_file(url: str, destination: Path) -> None:
         headers={"User-Agent": "Python dependency manager"},
     )
 
-    with urllib.request.urlopen(request, timeout=120) as response:
-        with destination.open("wb") as output_file:
-            shutil.copyfileobj(response, output_file)
+    with (
+        urllib.request.urlopen(request, timeout=120) as response,
+        destination.open("wb") as output_file,
+    ):
+        shutil.copyfileobj(response, output_file)
 
 
 def install_ollama_windows() -> None:
@@ -580,7 +434,7 @@ def main() -> None:
     except KeyboardInterrupt:
         print("\nOperation cancelled by user.")
         sys.exit(130)
-    except Exception as error:
+    except Exception as error:  # noqa: BLE001 - top-level CLI error reporting
         print(f"\nERROR: {error}")
         sys.exit(1)
 

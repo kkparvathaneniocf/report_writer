@@ -1,18 +1,22 @@
 from __future__ import annotations
 
 from pathlib import Path
+
 from docx import Document
+
 from lab_report.models import AgentOutput
 
 
-def write_report(outputs: list[AgentOutput], destination: Path, template: Path | None = None) -> None:
+def write_report(
+    outputs: list[AgentOutput], destination: Path, template: Path | None = None
+) -> None:
     """Template tokens: {{field_name}} in body paragraphs or table cells.
 
     Token replacement runs within each paragraph; token can span multiple runs.
     Replacing paragraph text can lose inline styling for paragraphs containing tokens.
     Do not use this on the production report without testing on a copy.
     """
-    doc = Document(template) if template else Document()
+    doc = Document(str(template)) if template else Document()
     fields = {f.field_name: f.value for item in outputs for f in item.fields if f.value is not None}
     if template:
         paragraphs = list(doc.paragraphs)
@@ -32,9 +36,11 @@ def write_report(outputs: list[AgentOutput], destination: Path, template: Path |
         for item in outputs:
             doc.add_heading(f"Section {item.section_id}", level=1)
             for field in item.fields:
-                doc.add_paragraph(f"{field.field_name}: {field.value or '[MISSING]'} [{field.status}] "
-                                  f"Evidence: {', '.join(field.evidence_ids)}")
+                doc.add_paragraph(
+                    f"{field.field_name}: {field.value or '[MISSING]'} [{field.status}] "
+                    f"Evidence: {', '.join(field.evidence_ids)}"
+                )
             if item.narrative:
                 doc.add_paragraph(item.narrative)
     destination.parent.mkdir(parents=True, exist_ok=True)
-    doc.save(destination)
+    doc.save(str(destination))

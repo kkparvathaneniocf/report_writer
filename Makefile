@@ -1,234 +1,84 @@
-# ============================================================
-# Project configuration
-# ============================================================
+# Requires uv (https://docs.astral.sh/uv/). On Windows without make, use `python make.py ...`.
 
-PYTHON_VERSION ?= 3.14
-APP ?= src.negodeck.background.cli
+PYTHON_VERSION ?= 3.12
+MODEL ?= gemma4:26b
+INPUT ?= data/raw
+OUTPUT ?= output
 
-
-# ============================================================
-# Help
-# ============================================================
-
-.PHONY: help
+.PHONY: help install install-locked upgrade lock test lint lint-fix format format-check \
+        type-check check demo run inspect ollama-setup build clean clean-venv reset
 
 help:
-	@echo ""
-	@echo "Available commands:"
-	@echo ""
-	@echo "  make install          Install project dependencies"
-	@echo "  make hard-install     Force reinstall all dependencies"
-	@echo "  make upgrade          Upgrade dependencies"
-	@echo "  make lock             Update uv.lock"
-	@echo "  make lock-check       Check uv.lock"
-	@echo ""
-	@echo "  make run              Run the application"
-	@echo ""
-	@echo "  make test             Run tests"
-	@echo "  make test-cov         Run tests with coverage"
-	@echo ""
-	@echo "  make lint             Run Ruff linter"
-	@echo "  make lint-fix         Run Ruff and fix problems"
-	@echo "  make format           Format code"
-	@echo "  make format-check     Check formatting"
-	@echo "  make type-check       Run MyPy"
-	@echo ""
-	@echo "  make check            Run all quality checks"
-	@echo ""
-	@echo "  make build            Build Python package"
-	@echo "  make clean            Remove temporary files"
-	@echo "  make clean-venv       Remove virtual environment"
-	@echo ""
+	@echo "Setup:     install | install-locked | upgrade | lock | reset"
+	@echo "Quality:   test | lint | lint-fix | format | format-check | type-check | check"
+	@echo "Run:       demo (no LLM) | run [MODEL=$(MODEL)] | inspect | ollama-setup"
+	@echo "Misc:      build | clean | clean-venv"
 
+# ---------------------------------------------------------------- setup
 
-# ============================================================
-# Python
-# ============================================================
+install:
+	uv sync --python $(PYTHON_VERSION) --extra dev
 
-.PHONY: python
+# Exact environment from uv.lock (CI / other machines).
+install-locked:
+	uv sync --python $(PYTHON_VERSION) --extra dev --locked
 
-python:
-	uv python install $(PYTHON_VERSION)
-
-
-# ============================================================
-# Installation
-# ============================================================
-
-.PHONY: install
-
-install: python
-	uv sync
-
-
-.PHONY: hard-install
-
-hard-install: python
-	uv sync --refresh --reinstall
-
-
-# Reproduce the exact environment from uv.lock.
-# Useful for CI/CD or another developer's machine.
-
-.PHONY: install-locked
-
-install-locked: python
-	uv sync --locked
-
-
-# ============================================================
-# Dependency management
-# ============================================================
-
-.PHONY: lock
+upgrade:
+	uv lock --upgrade
+	uv sync --extra dev
 
 lock:
 	uv lock
 
+reset: clean-venv install-locked
 
-.PHONY: lock-check
-
-lock-check:
-	uv lock --check
-
-
-.PHONY: upgrade
-
-upgrade:
-	uv lock --upgrade
-	uv sync
-
-
-# Usage:
-#
-# make add PKG=requests
-#
-
-.PHONY: add
-
-add:
-	uv add $(PKG)
-
-
-# Usage:
-#
-# make add-dev PKG=pytest-xdist
-#
-
-.PHONY: add-dev
-
-add-dev:
-	uv add --dev $(PKG)
-
-
-# ============================================================
-# Run
-# ============================================================
-
-.PHONY: run
-
-run:
-	uv run python -m $(APP)
-
-
-# ============================================================
-# Testing
-# ============================================================
-
-.PHONY: test
+# ---------------------------------------------------------------- quality
 
 test:
-	uv run pytest
-
-
-.PHONY: test-cov
-
-test-cov:
-	uv run pytest --cov=src --cov-report=term-missing
-
-
-# ============================================================
-# Lint
-# ============================================================
-
-.PHONY: lint
+	uv run pytest -q
 
 lint:
 	uv run ruff check .
 
-
-.PHONY: lint-fix
-
 lint-fix:
 	uv run ruff check . --fix
-
-
-# ============================================================
-# Formatting
-# ============================================================
-
-.PHONY: format
 
 format:
 	uv run ruff format .
 
-
-.PHONY: format-check
-
 format-check:
 	uv run ruff format --check .
-
-
-# ============================================================
-# Type checking
-# ============================================================
-
-.PHONY: type-check
 
 type-check:
 	uv run mypy src
 
-
-# ============================================================
-# Run all checks
-# ============================================================
-
-.PHONY: check
-
 check: format-check lint type-check test
 
+# ---------------------------------------------------------------- run
 
-# ============================================================
-# Build
-# ============================================================
+# Deterministic fiber calculation on the bundled example, no Ollama needed.
+demo:
+	mkdir -p $(INPUT)
+	cp examples/TR26_C0143_fiber.csv $(INPUT)/
+	uv run lab-report run --skip-llm --input-dir $(INPUT) --output-dir $(OUTPUT)
 
-.PHONY: build
+run:
+	uv run lab-report run --model $(MODEL) --input-dir $(INPUT) --output-dir $(OUTPUT)
+
+inspect:
+	uv run lab-report inspect --input-dir $(INPUT)
+
+ollama-setup:
+	uv run python make.py ollama-pull --model $(MODEL)
+
+# ---------------------------------------------------------------- misc
 
 build:
 	uv build
 
-
-# ============================================================
-# Clean
-# ============================================================
-
-.PHONY: clean
-
 clean:
-	powershell -NoProfile -Command "Remove-Item -Recurse -Force -ErrorAction SilentlyContinue build, dist, .pytest_cache, .ruff_cache, .mypy_cache"
-
-
-.PHONY: clean-venv
+	rm -rf build dist .pytest_cache .ruff_cache .mypy_cache
+	find . -name __pycache__ -type d -not -path "./.venv/*" -prune -exec rm -rf {} +
 
 clean-venv:
-	powershell -NoProfile -Command "Remove-Item -Recurse -Force -ErrorAction SilentlyContinue .venv"
-
-
-# ============================================================
-# Completely recreate virtual environment
-# ============================================================
-
-.PHONY: reset
-
-reset: clean-venv
-	uv sync --locked
+	rm -rf .venv
